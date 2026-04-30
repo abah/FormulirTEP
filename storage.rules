@@ -1,0 +1,30 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Berkas pendaftaran: uploads/{nomorId}/{namaBerkas}
+    //
+    // - WRITE  : publik, cukup batasi ukuran maks 15 MB.
+    // - READ   : publik. Ini pola standar Firebase: URL file selalu
+    //            menyertakan download token acak (UUID) yang dibuat
+    //            saat upload, sehingga file tidak bisa diakses sembarang
+    //            orang tanpa URL lengkap. Perlu "allow read" supaya
+    //            `getDownloadURL()` di SDK tidak gagal.
+    // - DELETE : hanya admin (alamat email terdaftar di koleksi `admins`).
+    match /uploads/{nomorId}/{fileName} {
+      allow read: if true;
+
+      allow write: if request.resource.size < 15 * 1024 * 1024;
+
+      allow delete: if request.auth != null
+                      && firestore.exists(
+                           /databases/(default)/documents/admins/$(request.auth.token.email)
+                         );
+    }
+
+    // Default deny untuk path lain.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

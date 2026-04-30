@@ -1,0 +1,51 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========== REGISTRATIONS (pendaftaran publik) ===========
+    match /registrations/{nomorId} {
+      // Create: siapa pun boleh submit (tanpa login) ASALKAN:
+      //   - dokumen dengan nomorId yang sama belum pernah ada (uniqueness),
+      //   - payload valid & status == "pending",
+      //   - request.resource.data.nomorId cocok dengan doc ID.
+      allow create: if
+        !exists(/databases/$(database)/documents/registrations/$(nomorId))
+        && validRegistration(request.resource.data, nomorId);
+
+      // Read / Update / Delete: hanya admin.
+      allow read, update, delete: if isAdmin();
+    }
+
+    // =========== ADMINS (whitelist verifikator) ===========
+    match /admins/{email} {
+      // User boleh membaca dokumen admin miliknya sendiri (untuk cek status login).
+      allow read: if request.auth != null
+                    && request.auth.token.email == email;
+      // Tulis-menulis daftar admin hanya boleh via Firebase Console / Admin SDK.
+      allow write: if false;
+    }
+
+    // Default deny lain-lain.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========== Helpers ===========
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.token.email));
+    }
+
+    function validRegistration(d, nomorId) {
+      return d.nomorId is string
+          && d.nomorId == nomorId
+          && d.nomorId.size() >= 6
+          && d.nomorId.size() <= 20
+          && d.namaLengkap is string && d.namaLengkap.size() > 2 && d.namaLengkap.size() < 200
+          && d.email is string && d.email.matches('.+@.+\\..+')
+          && d.status == 'pending'
+          && d.verifiedAt == null
+          && d.submittedAt == request.time;
+    }
+  }
+}

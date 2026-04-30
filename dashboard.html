@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard Admin &middot; Tim Ekspedisi Patriot 2026</title>
+  <meta name="description" content="Dashboard admin untuk memantau dan memverifikasi pendaftaran Tim Ekspedisi Patriot 2026." />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="theme-color" content="#081531" />
+
+  <link rel="icon" type="image/x-icon" href="assets/favicon.ico" />
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32x32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Fraunces:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css?v=20260423b" />
+  <link rel="stylesheet" href="dashboard.css?v=20260423b" />
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body class="dash-body">
+
+  <!-- =============== AUTH GATE =============== -->
+  <div class="auth-gate" id="authGate" hidden>
+    <div class="auth-card">
+      <img src="logo.png" alt="Logo" class="auth-card__logo" />
+      <div class="auth-card__kicker">KEMENTERIAN TRANSMIGRASI RI</div>
+      <h1 class="auth-card__title">Admin Console</h1>
+      <p class="auth-card__lead">Masuk dengan akun Google yang terdaftar sebagai verifikator Tim Ekspedisi Patriot 2026.</p>
+      <button class="auth-card__btn" id="signInBtn">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path fill="#EA4335" d="M12 11v3.2h5.06c-.22 1.16-.89 2.14-1.9 2.8v2.32h3.07c1.8-1.66 2.84-4.1 2.84-7.02 0-.67-.06-1.32-.18-1.94H12z"/><path fill="#34A853" d="M12 22c2.58 0 4.75-.85 6.33-2.3l-3.07-2.32c-.85.57-1.94.91-3.26.91-2.5 0-4.62-1.68-5.37-3.95H3.46v2.48A10 10 0 0 0 12 22z"/><path fill="#FBBC05" d="M6.63 14.34a5.99 5.99 0 0 1 0-3.68V8.18H3.46a10 10 0 0 0 0 7.64l3.17-2.48z"/><path fill="#4285F4" d="M12 6.16c1.4 0 2.66.48 3.65 1.43L18.3 5A10 10 0 0 0 12 2 10 10 0 0 0 3.46 8.18l3.17 2.48C7.38 8.4 9.5 6.16 12 6.16z"/></svg>
+        <span>Masuk dengan Google</span>
+      </button>
+      <p class="auth-card__note" id="authNote"></p>
+      <a href="index.html" class="auth-card__back">&larr; Kembali ke halaman formulir</a>
+    </div>
+  </div>
+
+
+  <div class="dash">
+    <!-- =============== SIDEBAR =============== -->
+    <aside class="dash-sidebar">
+      <div class="dash-sidebar__brand">
+        <img src="logo.png" alt="Logo" class="dash-sidebar__logo" />
+        <div>
+          <div class="dash-sidebar__title">TEP 2026</div>
+          <div class="dash-sidebar__sub">Admin Console</div>
+        </div>
+      </div>
+
+      <nav class="dash-nav" aria-label="Navigasi utama">
+        <button class="dash-nav__item is-active" data-view="registrations">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
+          <span>Pendaftaran</span>
+        </button>
+        <button class="dash-nav__item" data-view="overview">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12l3-3 4 4 5-5 6 6"/><path d="M14 4h6v6"/></svg>
+          <span>Ringkasan</span>
+        </button>
+        <button class="dash-nav__item" data-view="export">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12"/><path d="m7 12 5 5 5-5"/><path d="M20 21H4"/></svg>
+          <span>Ekspor Data</span>
+        </button>
+      </nav>
+
+      <div class="dash-sidebar__footer">
+        <div class="dash-sidebar__footer-row">
+          <div class="dash-sidebar__avatar" id="userAvatar">A</div>
+          <div>
+            <div class="dash-sidebar__uname" id="userName">Admin TEP</div>
+            <div class="dash-sidebar__urole" id="userEmail">Verifikator</div>
+          </div>
+        </div>
+        <div class="dash-sidebar__footer-links">
+          <a href="index.html" class="dash-sidebar__back">&larr; Kembali ke formulir</a>
+          <button type="button" class="dash-sidebar__back dash-sidebar__back--btn" id="signOutBtn">Keluar</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- =============== MAIN =============== -->
+    <main class="dash-main">
+
+      <!-- ---- Top bar ---- -->
+      <header class="dash-topbar">
+        <div>
+          <div class="dash-topbar__eyebrow">Langkah 01 &middot; Pendaftaran</div>
+          <h1 class="dash-topbar__title">Dashboard <span class="serif">Pendaftaran</span></h1>
+          <p class="dash-topbar__lead">Pantau, verifikasi, dan ekspor data pendaftar Tim Ekspedisi Patriot 2026.</p>
+        </div>
+        <div class="dash-topbar__actions">
+          <div class="dash-search">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input type="search" id="searchInput" placeholder="Cari nama, email, kode, NIK..." />
+          </div>
+          <div class="export-menu" id="exportMenu">
+            <button class="btn btn--secondary btn--sm export-menu__trigger" id="exportBtn" aria-haspopup="true" aria-expanded="false">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 12 5 5 5-5"/><path d="M20 21H4"/></svg>
+              Ekspor
+              <svg class="export-menu__caret" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="export-menu__dropdown" role="menu" hidden>
+              <button type="button" class="export-menu__item" data-export="csv" role="menuitem">
+                <span class="export-menu__icon">CSV</span>
+                <span class="export-menu__text">
+                  <span class="export-menu__title">Ekspor CSV</span>
+                  <span class="export-menu__desc">Tabular biasa (compatible Sheets, Excel, Numbers)</span>
+                </span>
+              </button>
+              <button type="button" class="export-menu__item" data-export="xlsx" role="menuitem">
+                <span class="export-menu__icon">XLSX</span>
+                <span class="export-menu__text">
+                  <span class="export-menu__title">Ekspor Excel</span>
+                  <span class="export-menu__desc">File .xlsx dengan format kolom otomatis</span>
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- ---- Stats grid ---- -->
+      <section class="stats-grid" aria-label="Statistik singkat">
+        <div class="stat-card stat-card--primary">
+          <div class="stat-card__icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </div>
+          <div class="stat-card__body">
+            <div class="stat-card__label">Total Pendaftar</div>
+            <div class="stat-card__value" id="statTotal">0</div>
+            <div class="stat-card__delta" id="statTotalDelta"></div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-card__icon stat-card__icon--warn">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          </div>
+          <div class="stat-card__body">
+            <div class="stat-card__label">Menunggu Verifikasi</div>
+            <div class="stat-card__value" id="statPending">0</div>
+            <div class="stat-card__delta">perlu ditinjau</div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-card__icon stat-card__icon--success">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 6 9 17l-5-5"/></svg>
+          </div>
+          <div class="stat-card__body">
+            <div class="stat-card__label">Terverifikasi</div>
+            <div class="stat-card__value" id="statVerified">0</div>
+            <div class="stat-card__delta">lulus verifikasi</div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-card__icon stat-card__icon--danger">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6"/><path d="m9 9 6 6"/></svg>
+          </div>
+          <div class="stat-card__body">
+            <div class="stat-card__label">Ditolak</div>
+            <div class="stat-card__value" id="statRejected">0</div>
+            <div class="stat-card__delta">tidak memenuhi syarat</div>
+          </div>
+        </div>
+
+        <div class="stat-card stat-card--wide">
+          <div class="stat-card__body">
+            <div class="stat-card__label">Pendaftar per Perguruan Tinggi Mitra</div>
+            <div class="bars" id="barsByMitra"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---- Filters ---- -->
+      <section class="dash-filters" aria-label="Filter">
+        <div class="filter-group">
+          <label class="filter-label">Status</label>
+          <div class="pill-row" id="filterStatus">
+            <button class="pill is-active" data-value="">Semua</button>
+            <button class="pill" data-value="pending">Menunggu</button>
+            <button class="pill" data-value="verified">Terverifikasi</button>
+            <button class="pill" data-value="rejected">Ditolak</button>
+          </div>
+        </div>
+        <div class="filter-group">
+          <label class="filter-label" for="filterMitra">PT Mitra</label>
+          <select id="filterMitra" class="select select--sm">
+            <option value="">Semua PT mitra</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label class="filter-label" for="filterPosisi">Posisi</label>
+          <select id="filterPosisi" class="select select--sm">
+            <option value="">Semua posisi</option>
+          </select>
+        </div>
+        <div class="filter-group filter-group--right">
+          <button class="btn-link" id="clearFilters">Hapus filter</button>
+        </div>
+      </section>
+
+      <!-- ---- Table ---- -->
+      <section class="dash-table-wrap">
+        <table class="dash-table" id="dashTable">
+          <thead>
+            <tr>
+              <th data-sort="kode">Kode</th>
+              <th data-sort="namaLengkap">Nama</th>
+              <th data-sort="ptMitra">PT Mitra</th>
+              <th data-sort="ptAsal">PT Asal</th>
+              <th data-sort="posisi">Posisi</th>
+              <th>Status</th>
+              <th data-sort="submittedAt">Tanggal</th>
+              <th aria-label="Aksi"></th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+
+        <div class="empty-state" id="emptyState" hidden>
+          <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg>
+          <h3>Belum ada data</h3>
+          <p>Tidak ada pendaftaran yang cocok dengan filter saat ini.</p>
+        </div>
+      </section>
+
+      <!-- ---- Pagination ---- -->
+      <footer class="dash-pagination" id="dashPagination" hidden>
+        <div class="dash-pagination__info" id="paginationInfo">—</div>
+        <div class="dash-pagination__controls">
+          <button class="btn btn--ghost btn--sm" id="prevPage">&larr; Sebelumnya</button>
+          <span class="dash-pagination__page" id="pageLabel">1 / 1</span>
+          <button class="btn btn--ghost btn--sm" id="nextPage">Berikutnya &rarr;</button>
+        </div>
+      </footer>
+
+    </main>
+  </div>
+
+  <!-- ============= DETAIL MODAL ============= -->
+  <div class="modal" id="detailModal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal__backdrop" data-close-modal></div>
+    <div class="modal__dialog">
+      <header class="modal__head">
+        <div>
+          <div class="modal__kicker" id="modalKode">—</div>
+          <h2 class="modal__title" id="modalTitle">Detail Pendaftar</h2>
+        </div>
+        <div class="modal__head-actions">
+          <span class="status-pill" id="modalStatus">—</span>
+          <button class="modal__close" data-close-modal aria-label="Tutup">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </div>
+      </header>
+      <div class="modal__body" id="modalBody"></div>
+      <footer class="modal__foot">
+        <button class="btn btn--danger btn--sm" id="modalReject">Tolak</button>
+        <div style="flex:1"></div>
+        <button class="btn btn--ghost btn--sm" data-close-modal>Tutup</button>
+        <button class="btn btn--primary btn--sm" id="modalVerify">Verifikasi</button>
+      </footer>
+    </div>
+  </div>
+
+  <script type="module">
+    const v = Math.floor(Date.now() / 3600000);
+    import(`./dashboard.js?v=${v}`);
+  </script>
+</body>
+</html>
