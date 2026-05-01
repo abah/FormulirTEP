@@ -61,6 +61,57 @@ import {
   }
 
   /* ============================================================
+   *  WAKTU - SEMUA TANGGAL/JAM DI DASHBOARD PAKAI WIB (UTC+7)
+   *  Indonesia WIB tidak mengenal DST, jadi offset selalu +7 jam.
+   * ============================================================ */
+  const WIB_TZ = "Asia/Jakarta";
+  const WIB_OFFSET_MS = 7 * 3600 * 1000;
+
+  // Kembalikan kunci tanggal kalender WIB (YYYY-MM-DD) untuk
+  // sebuah timestamp/Date. Berguna untuk grouping per-hari.
+  function wibDateKey(date) {
+    const t = date instanceof Date ? date.getTime() : new Date(date).getTime();
+    return new Date(t + WIB_OFFSET_MS).toISOString().slice(0, 10);
+  }
+
+  // Kembalikan timestamp UTC ms untuk tengah malam (00:00) WIB
+  // pada hari dari `date`. Dipakai untuk batas window "hari ini",
+  // "kemarin", "7 hari terakhir" sehingga konsisten meskipun
+  // browser admin tidak berada di zona WIB.
+  function wibStartOfDay(date) {
+    const t = (date instanceof Date ? date.getTime() : new Date(date).getTime());
+    const dayUTC = Math.floor((t + WIB_OFFSET_MS) / (24 * 3600 * 1000)) * (24 * 3600 * 1000);
+    return dayUTC - WIB_OFFSET_MS;
+  }
+
+  // Format tanggal+jam WIB untuk display, mis: "01 Mei 2026, 19.42 WIB"
+  function fmtDateTimeWIB(input, opts) {
+    if (!input) return "—";
+    const d = input instanceof Date ? input : new Date(input);
+    if (isNaN(d.getTime())) return "—";
+    const o = Object.assign({
+      day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit",
+      timeZone: WIB_TZ,
+    }, opts || {});
+    return d.toLocaleString("id-ID", o) + " WIB";
+  }
+  // Format tanggal saja WIB, mis: "01 Mei 2026"
+  function fmtDateWIB(input) {
+    if (!input) return "—";
+    const d = input instanceof Date ? input : new Date(input);
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("id-ID", {
+      day: "2-digit", month: "short", year: "numeric",
+      timeZone: WIB_TZ,
+    });
+  }
+  // Format tanggal panjang WIB, mis: "01 Mei 2026, 19.42 WIB"
+  function fmtLongDateTimeWIB(input) {
+    return fmtDateTimeWIB(input, { day: "2-digit", month: "long", year: "numeric" });
+  }
+
+  /* ============================================================
    *  STATE
    * ============================================================ */
   const state = {
@@ -149,13 +200,15 @@ import {
   function formatDate(iso) {
     if (!iso) return "—";
     const d = new Date(iso);
-    return d.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })
-      + " · " + d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("id-ID", {
+      day: "2-digit", month: "short", year: "numeric", timeZone: WIB_TZ,
+    }) + " · " + d.toLocaleTimeString("id-ID", {
+      hour: "2-digit", minute: "2-digit", timeZone: WIB_TZ,
+    }) + " WIB";
   }
   function formatDateShort(iso) {
-    if (!iso) return "—";
-    const d = new Date(iso);
-    return d.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+    return fmtDateWIB(iso);
   }
 
   /* ============================================================
@@ -328,12 +381,6 @@ import {
     return Number(n || 0).toLocaleString("id-ID");
   }
 
-  function startOfDay(date) {
-    const d = new Date(date);
-    d.setHours(0, 0, 0, 0);
-    return d;
-  }
-
   // Hitung kelengkapan berkas. Berkas wajib (sesuai form): pasFoto,
   // ijazah, suratIntegritas, suratRekomendasi, suratBersedia. Optional:
   // portoKarya, portoTim. Kita anggap "lengkap" bila 5 wajib ada.
@@ -400,17 +447,15 @@ import {
     renderDaerahChart(state.all);
     renderUkuranChart(state.all);
     renderFunnel(state.all);
-    if (el.execAsOf) el.execAsOf.textContent = new Date().toLocaleString("id-ID", {
-      day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit",
-    });
+    if (el.execAsOf) el.execAsOf.textContent = fmtLongDateTimeWIB(new Date());
   }
 
   // ---------- KPI ----------
   function setKPIs(rows) {
     const total = rows.length;
-    const today = startOfDay(new Date()).getTime();
+    const today = wibStartOfDay(new Date());
     const yesterday = today - 24 * 3600 * 1000;
-    const sevenDays = today - 6 * 24 * 3600 * 1000; // termasuk hari ini
+    const sevenDays = today - 6 * 24 * 3600 * 1000; // termasuk hari ini (WIB)
 
     const todayCount = rows.filter((r) => {
       const t = r.submittedAt ? new Date(r.submittedAt).getTime() : 0;
@@ -465,11 +510,11 @@ import {
     const cvs = document.getElementById("chartTrend");
     if (!cvs) return;
 
+    // Grouping per-hari pakai kalender WIB. Key = YYYY-MM-DD WIB.
     const byDay = new Map();
     rows.forEach((r) => {
       if (!r.submittedAt) return;
-      const d = startOfDay(new Date(r.submittedAt));
-      const key = d.toISOString().slice(0, 10);
+      const key = wibDateKey(r.submittedAt);
       byDay.set(key, (byDay.get(key) || 0) + 1);
     });
 
@@ -479,17 +524,30 @@ import {
     }
 
     const sortedKeys = [...byDay.keys()].sort();
-    const start = new Date(sortedKeys[0]);
-    const end = new Date(sortedKeys[sortedKeys.length - 1]);
+    const startKey = sortedKeys[0];
+    const endKey = sortedKeys[sortedKeys.length - 1];
+
+    // Iterasi hari demi hari dari start s/d end (kalender WIB).
+    // Trick: hitung pakai UTC midnight + WIB offset agar tidak
+    // tergantung timezone browser admin.
+    function dayMs(yyyyMmDd) {
+      // Anggap "yyyy-mm-dd" sebagai tanggal kalender WIB → konversi
+      // ke ms UTC pada 00:00 WIB hari itu.
+      const [y, m, d] = yyyyMmDd.split("-").map(Number);
+      return Date.UTC(y, m - 1, d) - WIB_OFFSET_MS;
+    }
 
     const labels = [];
     const daily = [];
     let cumulative = 0;
     const cumul = [];
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      const k = d.toISOString().slice(0, 10);
+
+    for (let t = dayMs(startKey); t <= dayMs(endKey); t += 24 * 3600 * 1000) {
+      const k = wibDateKey(new Date(t));
       const v = byDay.get(k) || 0;
-      labels.push(new Date(d).toLocaleDateString("id-ID", { day: "2-digit", month: "short" }));
+      labels.push(new Date(t).toLocaleDateString("id-ID", {
+        day: "2-digit", month: "short", timeZone: WIB_TZ,
+      }));
       daily.push(v);
       cumulative += v;
       cumul.push(cumulative);
@@ -1145,16 +1203,17 @@ import {
   // Format nilai untuk dimasukkan ke CSV.
   function csvFormatValue(v) {
     if (v == null) return "";
-    if (v instanceof Date) return v.toISOString();
+    if (v instanceof Date) return fmtDateTimeWIB(v);
     if (typeof v === "string") {
-      // Kalau sudah ISO date, ubah ke format lokal yang lebih enak dibaca.
+      // Kalau sudah ISO date, ubah ke format WIB yang enak dibaca.
       if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v)) {
         try {
           const d = new Date(v);
           return d.toLocaleString("id-ID", {
             day: "2-digit", month: "2-digit", year: "numeric",
             hour: "2-digit", minute: "2-digit", second: "2-digit",
-          });
+            timeZone: WIB_TZ,
+          }) + " WIB";
         } catch (_) { return v; }
       }
       return v;
@@ -1164,7 +1223,7 @@ import {
     if (typeof v === "object") {
       // Timestamp Firestore yang belum sempat di-ISO-kan
       if (typeof v.toDate === "function") {
-        try { return v.toDate().toLocaleString("id-ID"); } catch (_) {}
+        try { return fmtDateTimeWIB(v.toDate()); } catch (_) {}
       }
       try { return JSON.stringify(v); } catch (_) { return String(v); }
     }
@@ -1222,7 +1281,16 @@ import {
   }
 
   function timestampForFile() {
-    return new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+    // Pakai WIB sehingga nama file mencerminkan jam admin di Indonesia
+    // (mis. "tep-2026-pendaftar-2026-05-01-1942-wib.csv").
+    const d = new Date();
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: WIB_TZ,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hour12: false,
+    }).formatToParts(d);
+    const get = (t) => (parts.find((p) => p.type === t) || {}).value || "";
+    return `${get("year")}-${get("month")}-${get("day")}-${get("hour")}${get("minute")}-wib`;
   }
 
   function exportCSV() {
@@ -1294,7 +1362,7 @@ import {
     const summary = [
       ["Tim Ekspedisi Patriot 2026 - Daftar Pendaftar"],
       [],
-      ["Tanggal Ekspor", new Date().toLocaleString("id-ID")],
+      ["Tanggal Ekspor", fmtDateTimeWIB(new Date())],
       ["Jumlah Baris", rows.length],
       ["Total Pendaftar Database", state.all.length],
       ["Filter Aktif",
@@ -1445,9 +1513,7 @@ import {
   // Tombol Cetak / Simpan PDF
   el.execPrintBtn?.addEventListener("click", () => {
     if (el.execPrintedAt) {
-      el.execPrintedAt.textContent = new Date().toLocaleString("id-ID", {
-        day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit",
-      });
+      el.execPrintedAt.textContent = fmtLongDateTimeWIB(new Date());
     }
     // Beri jeda agar repaint sebelum print dialog
     setTimeout(() => window.print(), 80);

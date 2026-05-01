@@ -659,6 +659,7 @@ import {
       const fmt = now.toLocaleString("id-ID", {
         day: "2-digit", month: "long", year: "numeric",
         hour: "2-digit", minute: "2-digit",
+        timeZone: "Asia/Jakarta",
       }) + " WIB";
       if (refCodeEl) refCodeEl.textContent = kode;
       if (submittedAtEl) submittedAtEl.textContent = fmt;
