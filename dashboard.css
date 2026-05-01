@@ -1009,3 +1009,366 @@
   .dash-topbar__actions { width: 100%; }
   .dash-topbar__actions .dash-search { flex: 1; }
 }
+
+/* =============================================================
+   ============  RINGKASAN EKSEKUTIF (PEJABAT)  =================
+   ============================================================= */
+.view[hidden] { display: none; }
+
+/* --- Header eksekutif --- */
+.exec-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 28px 30px;
+  margin: 0 0 22px;
+  background: linear-gradient(135deg, var(--navy-900) 0%, var(--navy-700) 60%, var(--navy-600) 100%);
+  color: #fff;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  position: relative;
+  overflow: hidden;
+}
+.exec-header::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(60% 80% at 100% 0%, rgba(227, 193, 111, 0.18) 0%, transparent 60%),
+    radial-gradient(40% 60% at 0% 100%, rgba(212, 168, 83, 0.10) 0%, transparent 60%);
+  pointer-events: none;
+}
+.exec-header__brand {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+.exec-header__brand img {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.95);
+  padding: 4px;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 1px rgba(227,193,111,0.4);
+}
+.exec-header__kicker {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gold-400);
+  margin-bottom: 4px;
+}
+.exec-header__title {
+  font-family: var(--font-sans);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.18;
+  letter-spacing: -0.02em;
+  color: #fff;
+  margin: 0;
+}
+.exec-header__title .serif {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 500;
+  color: var(--gold-400);
+}
+.exec-header__lead {
+  margin: 8px 0 0;
+  color: rgba(255,255,255,0.78);
+  font-size: 14px;
+}
+.exec-header__actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.exec-header__actions .btn {
+  background: rgba(255,255,255,0.95);
+  color: var(--navy-900);
+  border: 0;
+}
+.exec-header__actions .btn:hover { background: #fff; }
+
+/* --- KPI Hero (6 kartu besar) --- */
+.kpi-hero {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.kpi {
+  background: #fff;
+  border: 1px solid var(--ink-200);
+  border-radius: var(--radius);
+  padding: 18px 18px 16px;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+}
+.kpi::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--navy-700), var(--gold-500));
+  opacity: 0.85;
+}
+.kpi__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-500);
+  margin-bottom: 8px;
+}
+.kpi__value {
+  font-family: var(--font-sans);
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: var(--navy-900);
+  line-height: 1;
+  margin-bottom: 6px;
+}
+.kpi__sub {
+  font-size: 12px;
+  color: var(--ink-500);
+}
+.kpi__sub.is-up { color: var(--success); font-weight: 600; }
+.kpi__sub.is-down { color: var(--danger); font-weight: 600; }
+
+/* --- Chart cards --- */
+.chart-row {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.chart-row--2 { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+.chart-row--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.chart-card {
+  background: #fff;
+  border: 1px solid var(--ink-200);
+  border-radius: var(--radius);
+  padding: 18px 20px 18px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+}
+.chart-card--full { width: 100%; margin-bottom: 18px; }
+.chart-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.chart-card__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--navy-900);
+  margin: 0 0 2px;
+}
+.chart-card__sub {
+  font-size: 12.5px;
+  color: var(--ink-500);
+  margin: 0;
+}
+.chart-card__body {
+  position: relative;
+  width: 100%;
+  height: 220px;
+}
+.chart-card__body--tall {
+  height: 320px;
+}
+.chart-card__body canvas { max-width: 100% !important; height: 100% !important; }
+
+/* --- Logistik Tabel --- */
+.logistik-table-wrap {
+  margin-top: 14px;
+  overflow-x: auto;
+}
+.logistik-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.logistik-table th,
+.logistik-table td {
+  padding: 9px 10px;
+  text-align: center;
+  border-bottom: 1px solid var(--ink-200);
+}
+.logistik-table th:first-child,
+.logistik-table td:first-child {
+  text-align: left;
+  font-weight: 600;
+  color: var(--navy-900);
+  background: var(--ink-50);
+}
+.logistik-table thead th {
+  background: var(--ink-50);
+  color: var(--ink-700);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.logistik-table tbody td:last-child {
+  font-weight: 700;
+  color: var(--navy-900);
+  background: var(--ink-50);
+}
+
+/* --- Funnel --- */
+.funnel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: auto !important;
+}
+.funnel-step {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) 140px;
+  align-items: center;
+  gap: 16px;
+}
+.funnel-step__label {
+  font-weight: 600;
+  color: var(--navy-900);
+  font-size: 14px;
+}
+.funnel-step__bar {
+  position: relative;
+  height: 38px;
+  background: var(--ink-100);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.funnel-step__fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--navy-700), var(--navy-500));
+  border-radius: 8px;
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.funnel-step--gold .funnel-step__fill {
+  background: linear-gradient(90deg, var(--gold-600), var(--gold-400));
+}
+.funnel-step--green .funnel-step__fill {
+  background: linear-gradient(90deg, #0E7C66, #16A085);
+}
+.funnel-step--red .funnel-step__fill {
+  background: linear-gradient(90deg, #B91C1C, #DC2626);
+}
+.funnel-step__bar-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.18);
+}
+.funnel-step__pct {
+  text-align: right;
+  font-weight: 700;
+  color: var(--ink-700);
+  font-size: 14px;
+}
+.funnel-step__pct small {
+  display: block;
+  font-weight: 500;
+  color: var(--ink-500);
+  font-size: 11px;
+}
+
+/* --- Footer eksekutif --- */
+.exec-footer {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 14px 18px;
+  font-size: 12px;
+  color: var(--ink-500);
+  border-top: 1px solid var(--ink-200);
+}
+.exec-footer__meta { font-variant-numeric: tabular-nums; }
+
+/* --- Responsive --- */
+@media (max-width: 1280px) {
+  .kpi-hero { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 1100px) {
+  .chart-row--2,
+  .chart-row--3 { grid-template-columns: 1fr; }
+}
+@media (max-width: 860px) {
+  .exec-header { flex-direction: column; padding: 22px; }
+  .exec-header__title { font-size: 22px; }
+  .kpi-hero { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .kpi__value { font-size: 26px; }
+  .funnel-step { grid-template-columns: 1fr; }
+  .funnel-step__pct { text-align: left; }
+}
+
+/* =============================================================
+   ====================  PRINT MODE  ===========================
+   ============================================================= */
+@media print {
+  @page { size: A4 portrait; margin: 14mm; }
+  body { background: #fff; }
+  .dash-sidebar,
+  .dash-topbar,
+  .view--registrations,
+  .auth-gate,
+  .modal,
+  .exec-header__actions,
+  .dash-pagination { display: none !important; }
+  .dash { display: block; }
+  .dash-main { padding: 0; }
+  .exec-header {
+    background: #fff !important;
+    color: var(--navy-900) !important;
+    border: 1px solid var(--ink-200);
+    box-shadow: none;
+    padding: 18px 0;
+    border-radius: 0;
+    margin-bottom: 12px;
+  }
+  .exec-header::before { display: none; }
+  .exec-header__title { color: var(--navy-900) !important; font-size: 20px; }
+  .exec-header__title .serif { color: var(--gold-600) !important; }
+  .exec-header__lead { color: var(--ink-700) !important; }
+  .exec-header__kicker { color: var(--gold-600) !important; }
+  .kpi-hero { grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .kpi { padding: 10px 10px 8px; box-shadow: none; }
+  .kpi__value { font-size: 22px; }
+  .kpi__label { font-size: 9px; }
+  .kpi__sub { font-size: 10px; }
+  .chart-card {
+    box-shadow: none;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    padding: 12px;
+    margin-bottom: 10px;
+  }
+  .chart-card__body { height: 220px; }
+  .chart-card__body--tall { height: 260px; }
+  .chart-row--2,
+  .chart-row--3 { gap: 8px; margin-bottom: 10px; }
+  .funnel-step__bar { background: #eee; }
+}
+

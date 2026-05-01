@@ -108,6 +108,26 @@ import {
     modalBody: $("#modalBody"),
     modalVerify: $("#modalVerify"),
     modalReject: $("#modalReject"),
+    // Executive view
+    viewOverview: $("#viewOverview"),
+    viewRegistrations: $("#viewRegistrations"),
+    execAsOf: $("#execAsOf"),
+    execPrintBtn: $("#execPrintBtn"),
+    execPrintedAt: $("#execPrintedAt"),
+    kpiTotal: $("#kpiTotal"),
+    kpiTotalSub: $("#kpiTotalSub"),
+    kpiToday: $("#kpiToday"),
+    kpiTodaySub: $("#kpiTodaySub"),
+    kpi7d: $("#kpi7d"),
+    kpi7dSub: $("#kpi7dSub"),
+    kpiComplete: $("#kpiComplete"),
+    kpiCompleteSub: $("#kpiCompleteSub"),
+    kpiVerified: $("#kpiVerified"),
+    kpiVerifiedSub: $("#kpiVerifiedSub"),
+    kpiGender: $("#kpiGender"),
+    kpiGenderSub: $("#kpiGenderSub"),
+    funnel: $("#funnel"),
+    logistikTable: $("#logistikTable"),
   };
 
   /* ============================================================
@@ -207,6 +227,7 @@ import {
     renderTable();
     renderPagination();
     renderSortHeaders();
+    renderOverview();
   }
 
   function renderStats() {
@@ -288,6 +309,545 @@ import {
       if (th.dataset.sort === state.sort.key) {
         th.classList.add(state.sort.dir === "asc" ? "is-sort-asc" : "is-sort-desc");
       }
+    });
+  }
+
+  /* ============================================================
+   *  EXECUTIVE OVERVIEW (charts + KPI)
+   * ============================================================ */
+  const charts = {};
+
+  // Palet konsisten dengan tema (navy + gold + aksen)
+  const PALETTE = [
+    "#122B5C", "#D4A853", "#1C3C7A", "#E3C16F", "#3A5AA0",
+    "#B38A2B", "#0E7C66", "#C53030", "#7C3AED", "#0EA5E9",
+    "#F59E0B", "#EC4899", "#10B981", "#6366F1", "#F472B6",
+  ];
+
+  function fmtN(n) {
+    return Number(n || 0).toLocaleString("id-ID");
+  }
+
+  function startOfDay(date) {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+
+  // Hitung kelengkapan berkas. Berkas wajib (sesuai form): pasFoto,
+  // ijazah, suratIntegritas, suratRekomendasi, suratBersedia. Optional:
+  // portoKarya, portoTim. Kita anggap "lengkap" bila 5 wajib ada.
+  const REQUIRED_FILES = ["pasFoto", "ijazah", "suratIntegritas", "suratRekomendasi", "suratBersedia"];
+  function isComplete(reg) {
+    if (!reg.berkas || typeof reg.berkas !== "object") return false;
+    return REQUIRED_FILES.every((k) => reg.berkas[k] && reg.berkas[k].url);
+  }
+
+  // Normalisasi value untuk grouping. Buang spasi awal/akhir, tampilkan
+  // "—" bila kosong.
+  function nz(v) {
+    const s = String(v || "").trim();
+    return s || "—";
+  }
+
+  function aggregate(rows, getKey) {
+    const map = new Map();
+    rows.forEach((r) => {
+      const k = getKey(r);
+      if (k == null) return;
+      map.set(k, (map.get(k) || 0) + 1);
+    });
+    return [...map.entries()].sort((a, b) => b[1] - a[1]);
+  }
+
+  function destroyChart(key) {
+    if (charts[key]) {
+      try { charts[key].destroy(); } catch (_) {}
+      delete charts[key];
+    }
+  }
+
+  function makeChart(key, ctx, config) {
+    destroyChart(key);
+    if (!ctx || typeof window.Chart === "undefined") return null;
+    charts[key] = new window.Chart(ctx, config);
+    return charts[key];
+  }
+
+  /**
+   * Render seluruh konten Ringkasan Eksekutif. Dipanggil tiap kali
+   * data berubah (lewat onSnapshot) DAN ketika view eksekutif aktif.
+   * Jika library Chart.js belum termuat, di-skip.
+   */
+  function renderOverview() {
+    if (!el.viewOverview) return;
+    if (typeof window.Chart === "undefined") return;
+    if (!state.all.length) {
+      // Tetap update KPI ke 0 supaya tampilan awal masuk akal
+      setKPIs(state.all);
+      return;
+    }
+    setKPIs(state.all);
+    renderTrendChart(state.all);
+    renderPtAsalChart(state.all);
+    renderPtMitraChart(state.all);
+    renderGenderChart(state.all);
+    renderPendidikanChart(state.all);
+    renderMasaWaktuChart(state.all);
+    renderGolDarahChart(state.all);
+    renderTransmigranChart(state.all);
+    renderPosisiChart(state.all);
+    renderDaerahChart(state.all);
+    renderUkuranChart(state.all);
+    renderFunnel(state.all);
+    if (el.execAsOf) el.execAsOf.textContent = new Date().toLocaleString("id-ID", {
+      day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+  }
+
+  // ---------- KPI ----------
+  function setKPIs(rows) {
+    const total = rows.length;
+    const today = startOfDay(new Date()).getTime();
+    const yesterday = today - 24 * 3600 * 1000;
+    const sevenDays = today - 6 * 24 * 3600 * 1000; // termasuk hari ini
+
+    const todayCount = rows.filter((r) => {
+      const t = r.submittedAt ? new Date(r.submittedAt).getTime() : 0;
+      return t >= today;
+    }).length;
+    const yesterdayCount = rows.filter((r) => {
+      const t = r.submittedAt ? new Date(r.submittedAt).getTime() : 0;
+      return t >= yesterday && t < today;
+    }).length;
+    const last7 = rows.filter((r) => {
+      const t = r.submittedAt ? new Date(r.submittedAt).getTime() : 0;
+      return t >= sevenDays;
+    }).length;
+    const verified = rows.filter((r) => r.status === "verified").length;
+    const complete = rows.filter(isComplete).length;
+    const male = rows.filter((r) => /laki/i.test(r.jenisKelamin || "")).length;
+    const female = rows.filter((r) => /perempuan/i.test(r.jenisKelamin || "")).length;
+
+    el.kpiTotal.textContent = fmtN(total);
+    el.kpiTotalSub.textContent = `${fmtN(rows.filter((r) => r.status === "pending").length)} menunggu verifikasi`;
+
+    el.kpiToday.textContent = fmtN(todayCount);
+    if (yesterdayCount === 0 && todayCount === 0) {
+      el.kpiTodaySub.textContent = "—";
+      el.kpiTodaySub.className = "kpi__sub";
+    } else {
+      const delta = todayCount - yesterdayCount;
+      const arrow = delta > 0 ? "▲" : delta < 0 ? "▼" : "—";
+      const cls = delta > 0 ? "kpi__sub is-up" : delta < 0 ? "kpi__sub is-down" : "kpi__sub";
+      el.kpiTodaySub.textContent = `${arrow} ${fmtN(Math.abs(delta))} vs kemarin (${fmtN(yesterdayCount)})`;
+      el.kpiTodaySub.className = cls;
+    }
+
+    el.kpi7d.textContent = fmtN(last7);
+    el.kpi7dSub.textContent = `rata-rata ${fmtN(Math.round(last7 / 7))} pendaftar/hari`;
+
+    el.kpiComplete.textContent = fmtN(complete);
+    el.kpiCompleteSub.textContent = total ? `${((complete / total) * 100).toFixed(1)}% dari total` : "—";
+
+    el.kpiVerified.textContent = fmtN(verified);
+    el.kpiVerifiedSub.textContent = total ? `${((verified / total) * 100).toFixed(1)}% dari total` : "—";
+
+    el.kpiGender.textContent = `${fmtN(male)} : ${fmtN(female)}`;
+    const tot = male + female;
+    el.kpiGenderSub.textContent = tot
+      ? `${((male / tot) * 100).toFixed(0)}% L · ${((female / tot) * 100).toFixed(0)}% P`
+      : "komposisi gender";
+  }
+
+  // ---------- Tren harian (line + cumulative) ----------
+  function renderTrendChart(rows) {
+    const cvs = document.getElementById("chartTrend");
+    if (!cvs) return;
+
+    const byDay = new Map();
+    rows.forEach((r) => {
+      if (!r.submittedAt) return;
+      const d = startOfDay(new Date(r.submittedAt));
+      const key = d.toISOString().slice(0, 10);
+      byDay.set(key, (byDay.get(key) || 0) + 1);
+    });
+
+    if (byDay.size === 0) {
+      destroyChart("trend");
+      return;
+    }
+
+    const sortedKeys = [...byDay.keys()].sort();
+    const start = new Date(sortedKeys[0]);
+    const end = new Date(sortedKeys[sortedKeys.length - 1]);
+
+    const labels = [];
+    const daily = [];
+    let cumulative = 0;
+    const cumul = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const k = d.toISOString().slice(0, 10);
+      const v = byDay.get(k) || 0;
+      labels.push(new Date(d).toLocaleDateString("id-ID", { day: "2-digit", month: "short" }));
+      daily.push(v);
+      cumulative += v;
+      cumul.push(cumulative);
+    }
+
+    makeChart("trend", cvs.getContext("2d"), {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "Pendaftar baru",
+            data: daily,
+            borderColor: "#122B5C",
+            backgroundColor: "rgba(18, 43, 92, 0.12)",
+            fill: true,
+            tension: 0.32,
+            pointRadius: 2.5,
+            pointHoverRadius: 5,
+            yAxisID: "y",
+            borderWidth: 2.5,
+          },
+          {
+            label: "Akumulasi total",
+            data: cumul,
+            borderColor: "#D4A853",
+            backgroundColor: "rgba(212, 168, 83, 0.0)",
+            fill: false,
+            tension: 0.32,
+            pointRadius: 0,
+            yAxisID: "y1",
+            borderWidth: 2,
+            borderDash: [6, 4],
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { position: "bottom", labels: { boxWidth: 12, padding: 14, color: "#334155" } },
+          tooltip: { backgroundColor: "#0F172A", padding: 10 },
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: { color: "#64748B", precision: 0 },
+            grid: { color: "rgba(0,0,0,0.05)" },
+            title: { display: true, text: "Pendaftar / hari", color: "#64748B", font: { size: 11 } },
+          },
+          y1: {
+            beginAtZero: true,
+            position: "right",
+            ticks: { color: "#B38A2B" },
+            grid: { drawOnChartArea: false },
+            title: { display: true, text: "Akumulasi", color: "#B38A2B", font: { size: 11 } },
+          },
+          x: {
+            ticks: { color: "#64748B", maxRotation: 0, autoSkip: true, maxTicksLimit: 12 },
+            grid: { display: false },
+          },
+        },
+      },
+    });
+  }
+
+  // ---------- Top 10 PT Asal ----------
+  function renderPtAsalChart(rows) {
+    const cvs = document.getElementById("chartPtAsal");
+    if (!cvs) return;
+    const top = aggregate(rows, (r) => {
+      const v = r.ptAsal === "__other__" ? r.ptAsalOther : r.ptAsal;
+      return v ? nz(v) : null;
+    }).slice(0, 10);
+
+    if (!top.length) { destroyChart("ptAsal"); return; }
+
+    makeChart("ptAsal", cvs.getContext("2d"), {
+      type: "bar",
+      data: {
+        labels: top.map(([k]) => k),
+        datasets: [{
+          label: "Pendaftar",
+          data: top.map(([, v]) => v),
+          backgroundColor: "rgba(18, 43, 92, 0.85)",
+          borderRadius: 4,
+          maxBarThickness: 22,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        indexAxis: "y",
+        plugins: {
+          legend: { display: false },
+          tooltip: { backgroundColor: "#0F172A" },
+        },
+        scales: {
+          x: { beginAtZero: true, ticks: { color: "#64748B", precision: 0 }, grid: { color: "rgba(0,0,0,0.05)" } },
+          y: { ticks: { color: "#334155", font: { size: 11 } }, grid: { display: false } },
+        },
+      },
+    });
+  }
+
+  // ---------- Donut PT Mitra ----------
+  function renderPtMitraChart(rows) {
+    const cvs = document.getElementById("chartPtMitra");
+    if (!cvs) return;
+    const data = aggregate(rows, (r) => r.ptMitra ? nz(r.ptMitra) : null);
+    if (!data.length) { destroyChart("ptMitra"); return; }
+    renderDoughnut("ptMitra", cvs, data);
+  }
+
+  // ---------- Donut Gender ----------
+  function renderGenderChart(rows) {
+    const cvs = document.getElementById("chartGender");
+    if (!cvs) return;
+    const data = aggregate(rows, (r) => r.jenisKelamin ? nz(r.jenisKelamin) : null);
+    renderDoughnut("gender", cvs, data, ["#122B5C", "#D4A853", "#94A3B8"]);
+  }
+
+  // ---------- Donut Status Pendidikan ----------
+  function renderPendidikanChart(rows) {
+    const cvs = document.getElementById("chartPendidikan");
+    if (!cvs) return;
+    const data = aggregate(rows, (r) => r.statusPendidikan ? nz(r.statusPendidikan) : null);
+    renderDoughnut("pendidikan", cvs, data);
+  }
+
+  // ---------- Donut Masa Waktu Kegiatan ----------
+  function renderMasaWaktuChart(rows) {
+    const cvs = document.getElementById("chartMasaWaktu");
+    if (!cvs) return;
+    const data = aggregate(rows, (r) => r.masaWaktuKegiatan ? nz(r.masaWaktuKegiatan) : null);
+    renderDoughnut("masaWaktu", cvs, data, ["#122B5C", "#D4A853"]);
+  }
+
+  // ---------- Donut Golongan Darah ----------
+  function renderGolDarahChart(rows) {
+    const cvs = document.getElementById("chartGolDarah");
+    if (!cvs) return;
+    const data = aggregate(rows, (r) => r.golonganDarah ? nz(r.golonganDarah) : null);
+    renderDoughnut("golDarah", cvs, data);
+  }
+
+  // ---------- Donut Keluarga Transmigran ----------
+  function renderTransmigranChart(rows) {
+    const cvs = document.getElementById("chartTransmigran");
+    if (!cvs) return;
+    const data = aggregate(rows, (r) => {
+      const v = r.keluargaTransmigran || r.asalKawasanTransmigrasi;
+      return v ? nz(v) : null;
+    });
+    renderDoughnut("transmigran", cvs, data, ["#0E7C66", "#94A3B8"]);
+  }
+
+  // ---------- Donut Posisi ----------
+  function renderPosisiChart(rows) {
+    const cvs = document.getElementById("chartPosisi");
+    if (!cvs) return;
+    const data = aggregate(rows, (r) => r.posisi ? nz(r.posisi) : null);
+    renderDoughnut("posisi", cvs, data);
+  }
+
+  // ---------- Top 15 Daerah ----------
+  function renderDaerahChart(rows) {
+    const cvs = document.getElementById("chartDaerah");
+    if (!cvs) return;
+    const top = aggregate(rows, (r) => r.asalDaerah ? nz(r.asalDaerah) : null).slice(0, 15);
+    if (!top.length) { destroyChart("daerah"); return; }
+
+    makeChart("daerah", cvs.getContext("2d"), {
+      type: "bar",
+      data: {
+        labels: top.map(([k]) => k),
+        datasets: [{
+          label: "Pendaftar",
+          data: top.map(([, v]) => v),
+          backgroundColor: "rgba(212, 168, 83, 0.92)",
+          borderRadius: 4,
+          maxBarThickness: 20,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        indexAxis: "y",
+        plugins: {
+          legend: { display: false },
+          tooltip: { backgroundColor: "#0F172A" },
+        },
+        scales: {
+          x: { beginAtZero: true, ticks: { color: "#64748B", precision: 0 }, grid: { color: "rgba(0,0,0,0.05)" } },
+          y: { ticks: { color: "#334155", font: { size: 11 } }, grid: { display: false } },
+        },
+      },
+    });
+  }
+
+  // ---------- Logistik Ukuran Pakaian ----------
+  // Stacked bar (4 series = 4 jenis pakaian) + tabel ringkasan.
+  function renderUkuranChart(rows) {
+    const cvs = document.getElementById("chartUkuran");
+    if (!cvs) return;
+
+    const SIZE_ORDER = ["S", "M", "L", "XL", "2XL", "3XL", "4XL"];
+    const items = [
+      { key: "ukuranKemeja", other: "ukuranKemejaOther", label: "Kemeja", color: "#122B5C" },
+      { key: "ukuranCelana", other: "ukuranCelanaOther", label: "Celana", color: "#1C3C7A" },
+      { key: "ukuranRompi",  other: "ukuranRompiOther",  label: "Rompi",  color: "#D4A853" },
+      { key: "ukuranJaket",  other: "ukuranJaketOther",  label: "Jaket",  color: "#B38A2B" },
+    ];
+
+    function normalizeSize(v) {
+      if (!v) return null;
+      const s = String(v).trim().toUpperCase().replace(/\s+/g, "");
+      if (s === "__OTHER__") return null;
+      // Ke standar 2XL, 3XL, 4XL (bukan XXL/XXXL/XXXXL)
+      if (s === "XXL") return "2XL";
+      if (s === "XXXL") return "3XL";
+      if (s === "XXXXL") return "4XL";
+      if (SIZE_ORDER.includes(s)) return s;
+      return null;
+    }
+
+    const datasets = items.map((it) => {
+      const counts = SIZE_ORDER.map(() => 0);
+      rows.forEach((r) => {
+        let v = r[it.key];
+        if (v === "__other__") v = r[it.other];
+        const s = normalizeSize(v);
+        if (s) counts[SIZE_ORDER.indexOf(s)]++;
+      });
+      return {
+        label: it.label,
+        data: counts,
+        backgroundColor: it.color,
+        borderRadius: 4,
+        maxBarThickness: 28,
+        _total: counts.reduce((a, b) => a + b, 0),
+      };
+    });
+
+    makeChart("ukuran", cvs.getContext("2d"), {
+      type: "bar",
+      data: { labels: SIZE_ORDER, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: "bottom", labels: { boxWidth: 12, padding: 14, color: "#334155" } },
+          tooltip: { backgroundColor: "#0F172A" },
+        },
+        scales: {
+          x: { ticks: { color: "#334155", font: { weight: "600" } }, grid: { display: false } },
+          y: { beginAtZero: true, ticks: { color: "#64748B", precision: 0 }, grid: { color: "rgba(0,0,0,0.05)" } },
+        },
+      },
+    });
+
+    // --- Tabel ringkasan ---
+    if (el.logistikTable) {
+      const tbody = el.logistikTable.querySelector("tbody");
+      tbody.innerHTML = items.map((it) => {
+        const counts = SIZE_ORDER.map((sz) => {
+          let n = 0;
+          rows.forEach((r) => {
+            let v = r[it.key];
+            if (v === "__other__") v = r[it.other];
+            if (normalizeSize(v) === sz) n++;
+          });
+          return n;
+        });
+        const total = counts.reduce((a, b) => a + b, 0);
+        return `<tr>
+          <td>${esc(it.label)}</td>
+          ${counts.map((c) => `<td>${c || "—"}</td>`).join("")}
+          <td>${total}</td>
+        </tr>`;
+      }).join("");
+    }
+  }
+
+  // ---------- Funnel Verifikasi ----------
+  function renderFunnel(rows) {
+    if (!el.funnel) return;
+    const total = rows.length;
+    const complete = rows.filter(isComplete).length;
+    const verified = rows.filter((r) => r.status === "verified").length;
+    const rejected = rows.filter((r) => r.status === "rejected").length;
+
+    const max = Math.max(1, total);
+    const steps = [
+      { label: "Total Pendaftar", value: total, max, modifier: "" },
+      { label: "Berkas Lengkap", value: complete, max, modifier: "gold" },
+      { label: "Terverifikasi",  value: verified, max, modifier: "green" },
+      { label: "Ditolak",        value: rejected, max, modifier: "red" },
+    ];
+
+    el.funnel.innerHTML = steps.map((s) => {
+      const pct = max ? (s.value / max) * 100 : 0;
+      const pctOfTotal = total ? ((s.value / total) * 100).toFixed(1) : "0.0";
+      return `
+        <div class="funnel-step ${s.modifier ? `funnel-step--${s.modifier}` : ""}">
+          <div class="funnel-step__label">${esc(s.label)}</div>
+          <div class="funnel-step__bar">
+            <div class="funnel-step__fill" style="width:${pct.toFixed(1)}%"></div>
+            <div class="funnel-step__bar-text">${fmtN(s.value)} pendaftar</div>
+          </div>
+          <div class="funnel-step__pct">
+            ${pctOfTotal}%
+            <small>dari total pendaftar</small>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  // ---------- Helper: doughnut chart ----------
+  function renderDoughnut(key, cvs, data, palette) {
+    if (!data.length) { destroyChart(key); return; }
+    const colors = (palette && palette.length >= data.length) ? palette : PALETTE;
+    makeChart(key, cvs.getContext("2d"), {
+      type: "doughnut",
+      data: {
+        labels: data.map(([k]) => k),
+        datasets: [{
+          data: data.map(([, v]) => v),
+          backgroundColor: data.map((_, i) => colors[i % colors.length]),
+          borderWidth: 2,
+          borderColor: "#fff",
+          hoverOffset: 6,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: "62%",
+        plugins: {
+          legend: {
+            position: "right",
+            align: "center",
+            labels: { boxWidth: 10, padding: 8, color: "#334155", font: { size: 11.5 } },
+          },
+          tooltip: {
+            backgroundColor: "#0F172A",
+            callbacks: {
+              label: (ctx) => {
+                const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                const pct = total ? ((ctx.parsed / total) * 100).toFixed(1) : "0.0";
+                return `${ctx.label}: ${fmtN(ctx.parsed)} (${pct}%)`;
+              },
+            },
+          },
+        },
+      },
     });
   }
 
@@ -849,22 +1409,48 @@ import {
   el.modalVerify.addEventListener("click", () => setStatus("verified"));
   el.modalReject.addEventListener("click", () => setStatus("rejected"));
 
-  // Nav items (stub — hanya Pendaftaran yang aktif)
+  // Nav items: switch view antara Ringkasan Eksekutif <-> Pendaftaran
+  function switchView(view) {
+    if (!el.viewOverview || !el.viewRegistrations) return;
+    if (view === "registrations") {
+      el.viewOverview.hidden = true;
+      el.viewRegistrations.hidden = false;
+    } else if (view === "overview") {
+      el.viewOverview.hidden = false;
+      el.viewRegistrations.hidden = true;
+      // Render ulang chart begitu view aktif (canvas baru terlihat → ukuran benar)
+      requestAnimationFrame(() => renderOverview());
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   $$(".dash-nav__item").forEach((b) => {
     b.addEventListener("click", () => {
       $$(".dash-nav__item").forEach((x) => x.classList.remove("is-active"));
       b.classList.add("is-active");
-      if (b.dataset.view === "export") {
-        setExportMenuOpen(true);
-        el.exportBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+      const view = b.dataset.view;
+      if (view === "export") {
+        // Buka menu ekspor di view tabel
+        switchView("registrations");
+        setTimeout(() => {
+          setExportMenuOpen(true);
+          el.exportBtn?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 60);
+        return;
       }
-      if (b.dataset.view === "overview") {
-        document.querySelector(".stats-grid").scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-      if (b.dataset.view === "registrations") {
-        document.querySelector(".dash-table-wrap").scrollIntoView({ behavior: "smooth", block: "start" });
-      }
+      switchView(view);
     });
+  });
+
+  // Tombol Cetak / Simpan PDF
+  el.execPrintBtn?.addEventListener("click", () => {
+    if (el.execPrintedAt) {
+      el.execPrintedAt.textContent = new Date().toLocaleString("id-ID", {
+        day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit",
+      });
+    }
+    // Beri jeda agar repaint sebelum print dialog
+    setTimeout(() => window.print(), 80);
   });
 
   /* ============================================================

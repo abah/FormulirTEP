@@ -29,6 +29,7 @@
   <link rel="stylesheet" href="dashboard.css?v=20260423b" />
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body class="dash-body">
 
@@ -61,13 +62,13 @@
       </div>
 
       <nav class="dash-nav" aria-label="Navigasi utama">
-        <button class="dash-nav__item is-active" data-view="registrations">
+        <button class="dash-nav__item is-active" data-view="overview">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12l3-3 4 4 5-5 6 6"/><path d="M14 4h6v6"/></svg>
+          <span>Ringkasan Eksekutif</span>
+        </button>
+        <button class="dash-nav__item" data-view="registrations">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
           <span>Pendaftaran</span>
-        </button>
-        <button class="dash-nav__item" data-view="overview">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12l3-3 4 4 5-5 6 6"/><path d="M14 4h6v6"/></svg>
-          <span>Ringkasan</span>
         </button>
         <button class="dash-nav__item" data-view="export">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12"/><path d="m7 12 5 5 5-5"/><path d="M20 21H4"/></svg>
@@ -92,6 +93,190 @@
 
     <!-- =============== MAIN =============== -->
     <main class="dash-main">
+
+      <!-- ============================================================
+           ===========  VIEW: RINGKASAN EKSEKUTIF (PEJABAT)  ===========
+           ============================================================ -->
+      <section class="view view--overview" id="viewOverview">
+        <header class="exec-header">
+          <div class="exec-header__brand">
+            <img src="logo.png" alt="Logo Kementerian Transmigrasi" />
+            <div>
+              <div class="exec-header__kicker">Kementerian Transmigrasi Republik Indonesia</div>
+              <h1 class="exec-header__title">Ringkasan Eksekutif <span class="serif">Tim Ekspedisi Patriot 2026</span></h1>
+              <p class="exec-header__lead">Pantauan progres pendaftaran &mdash; data realtime per <span id="execAsOf">—</span>.</p>
+            </div>
+          </div>
+          <div class="exec-header__actions">
+            <button class="btn btn--secondary btn--sm" id="execPrintBtn" type="button">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V3h12v6"/><rect x="6" y="14" width="12" height="7"/><path d="M18 14H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2z"/></svg>
+              Cetak / Simpan PDF
+            </button>
+          </div>
+        </header>
+
+        <!-- KPI Hero -->
+        <section class="kpi-hero" aria-label="Indikator utama">
+          <div class="kpi">
+            <div class="kpi__label">Total Pendaftar</div>
+            <div class="kpi__value" id="kpiTotal">0</div>
+            <div class="kpi__sub" id="kpiTotalSub">—</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi__label">Hari Ini</div>
+            <div class="kpi__value" id="kpiToday">0</div>
+            <div class="kpi__sub" id="kpiTodaySub">vs kemarin</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi__label">7 Hari Terakhir</div>
+            <div class="kpi__value" id="kpi7d">0</div>
+            <div class="kpi__sub" id="kpi7dSub">rata-rata harian</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi__label">Berkas Lengkap</div>
+            <div class="kpi__value" id="kpiComplete">0</div>
+            <div class="kpi__sub" id="kpiCompleteSub">— % dari total</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi__label">Terverifikasi</div>
+            <div class="kpi__value" id="kpiVerified">0</div>
+            <div class="kpi__sub" id="kpiVerifiedSub">— % dari total</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi__label">Rasio L : P</div>
+            <div class="kpi__value" id="kpiGender">— : —</div>
+            <div class="kpi__sub" id="kpiGenderSub">komposisi gender</div>
+          </div>
+        </section>
+
+        <!-- Tren Pendaftaran -->
+        <section class="chart-card chart-card--full">
+          <header class="chart-card__head">
+            <div>
+              <h3 class="chart-card__title">Tren Pendaftaran Harian</h3>
+              <p class="chart-card__sub">Pendaftar baru per hari &amp; akumulasi total</p>
+            </div>
+            <div class="chart-card__legend" id="legendTrend"></div>
+          </header>
+          <div class="chart-card__body chart-card__body--tall">
+            <canvas id="chartTrend"></canvas>
+          </div>
+        </section>
+
+        <!-- Row: PT Asal Top 10 + PT Mitra Donut -->
+        <div class="chart-row chart-row--2">
+          <section class="chart-card">
+            <header class="chart-card__head">
+              <div>
+                <h3 class="chart-card__title">10 Perguruan Tinggi Asal Terbanyak</h3>
+                <p class="chart-card__sub">Asal kampus pendaftar</p>
+              </div>
+            </header>
+            <div class="chart-card__body chart-card__body--tall">
+              <canvas id="chartPtAsal"></canvas>
+            </div>
+          </section>
+          <section class="chart-card">
+            <header class="chart-card__head">
+              <div>
+                <h3 class="chart-card__title">Distribusi PT Mitra (Induk)</h3>
+                <p class="chart-card__sub">Sebaran pilihan kampus induk</p>
+              </div>
+            </header>
+            <div class="chart-card__body chart-card__body--tall">
+              <canvas id="chartPtMitra"></canvas>
+            </div>
+          </section>
+        </div>
+
+        <!-- Row: Demografi (3 kolom) -->
+        <div class="chart-row chart-row--3">
+          <section class="chart-card">
+            <header class="chart-card__head"><h3 class="chart-card__title">Jenis Kelamin</h3></header>
+            <div class="chart-card__body"><canvas id="chartGender"></canvas></div>
+          </section>
+          <section class="chart-card">
+            <header class="chart-card__head"><h3 class="chart-card__title">Status Pendidikan</h3></header>
+            <div class="chart-card__body"><canvas id="chartPendidikan"></canvas></div>
+          </section>
+          <section class="chart-card">
+            <header class="chart-card__head"><h3 class="chart-card__title">Masa Waktu Kegiatan</h3></header>
+            <div class="chart-card__body"><canvas id="chartMasaWaktu"></canvas></div>
+          </section>
+        </div>
+
+        <!-- Row: Demografi 2 (3 kolom) -->
+        <div class="chart-row chart-row--3">
+          <section class="chart-card">
+            <header class="chart-card__head"><h3 class="chart-card__title">Golongan Darah</h3></header>
+            <div class="chart-card__body"><canvas id="chartGolDarah"></canvas></div>
+          </section>
+          <section class="chart-card">
+            <header class="chart-card__head"><h3 class="chart-card__title">Keturunan Transmigran</h3></header>
+            <div class="chart-card__body"><canvas id="chartTransmigran"></canvas></div>
+          </section>
+          <section class="chart-card">
+            <header class="chart-card__head"><h3 class="chart-card__title">Posisi yang Dilamar</h3></header>
+            <div class="chart-card__body"><canvas id="chartPosisi"></canvas></div>
+          </section>
+        </div>
+
+        <!-- Sebaran Asal Daerah -->
+        <section class="chart-card chart-card--full">
+          <header class="chart-card__head">
+            <div>
+              <h3 class="chart-card__title">15 Asal Daerah Terbanyak</h3>
+              <p class="chart-card__sub">Berdasarkan isian "Asal Daerah" pendaftar</p>
+            </div>
+          </header>
+          <div class="chart-card__body chart-card__body--tall">
+            <canvas id="chartDaerah"></canvas>
+          </div>
+        </section>
+
+        <!-- Logistik Ukuran Pakaian -->
+        <section class="chart-card chart-card--full">
+          <header class="chart-card__head">
+            <div>
+              <h3 class="chart-card__title">Logistik Ukuran Pakaian</h3>
+              <p class="chart-card__sub">Rekap kebutuhan untuk pengadaan seragam (kemeja, celana, rompi, jaket)</p>
+            </div>
+          </header>
+          <div class="chart-card__body chart-card__body--tall">
+            <canvas id="chartUkuran"></canvas>
+          </div>
+          <div class="logistik-table-wrap">
+            <table class="logistik-table" id="logistikTable">
+              <thead>
+                <tr><th>Item</th><th>S</th><th>M</th><th>L</th><th>XL</th><th>2XL</th><th>3XL</th><th>4XL</th><th>Total</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Funnel Verifikasi -->
+        <section class="chart-card chart-card--full">
+          <header class="chart-card__head">
+            <div>
+              <h3 class="chart-card__title">Funnel Verifikasi</h3>
+              <p class="chart-card__sub">Konversi dari pendaftar &rarr; berkas lengkap &rarr; terverifikasi</p>
+            </div>
+          </header>
+          <div class="chart-card__body funnel" id="funnel"></div>
+        </section>
+
+        <footer class="exec-footer">
+          <div>Dokumen ini dihasilkan otomatis dari sistem pendaftaran <strong>tep.transmigrasi.go.id</strong> &mdash; Kementerian Transmigrasi Republik Indonesia.</div>
+          <div class="exec-footer__meta">Dicetak: <span id="execPrintedAt">—</span></div>
+        </footer>
+      </section>
+
+
+      <!-- ============================================================
+           ============  VIEW: PENDAFTARAN (TABEL ADMIN)  =============
+           ============================================================ -->
+      <section class="view view--registrations" id="viewRegistrations" hidden>
 
       <!-- ---- Top bar ---- -->
       <header class="dash-topbar">
@@ -247,6 +432,8 @@
           <button class="btn btn--ghost btn--sm" id="nextPage">Berikutnya &rarr;</button>
         </div>
       </footer>
+
+      </section> <!-- /view--registrations -->
 
     </main>
   </div>
