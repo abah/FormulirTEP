@@ -537,7 +537,8 @@ import {
       return Date.UTC(y, m - 1, d) - WIB_OFFSET_MS;
     }
 
-    const labels = [];
+    const labels = [];     // label pendek untuk axis: "01 Mei"
+    const titles = [];     // label panjang untuk tooltip: "Jumat, 01 Mei 2026 WIB"
     const daily = [];
     let cumulative = 0;
     const cumul = [];
@@ -545,9 +546,13 @@ import {
     for (let t = dayMs(startKey); t <= dayMs(endKey); t += 24 * 3600 * 1000) {
       const k = wibDateKey(new Date(t));
       const v = byDay.get(k) || 0;
-      labels.push(new Date(t).toLocaleDateString("id-ID", {
+      const dt = new Date(t);
+      labels.push(dt.toLocaleDateString("id-ID", {
         day: "2-digit", month: "short", timeZone: WIB_TZ,
       }));
+      titles.push(dt.toLocaleDateString("id-ID", {
+        weekday: "long", day: "2-digit", month: "long", year: "numeric", timeZone: WIB_TZ,
+      }) + " · WIB");
       daily.push(v);
       cumulative += v;
       cumul.push(cumulative);
@@ -559,7 +564,7 @@ import {
         labels,
         datasets: [
           {
-            label: "Pendaftar baru",
+            label: "Pendaftar baru / hari",
             data: daily,
             borderColor: "#122B5C",
             backgroundColor: "rgba(18, 43, 92, 0.12)",
@@ -590,21 +595,30 @@ import {
         interaction: { mode: "index", intersect: false },
         plugins: {
           legend: { position: "bottom", labels: { boxWidth: 12, padding: 14, color: "#334155" } },
-          tooltip: { backgroundColor: "#0F172A", padding: 10 },
+          tooltip: {
+            backgroundColor: "#0F172A",
+            padding: 12,
+            titleFont: { size: 12, weight: "600" },
+            bodyFont: { size: 12 },
+            callbacks: {
+              title: (items) => items.length ? titles[items[0].dataIndex] : "",
+              label: (ctx) => `${ctx.dataset.label}: ${fmtN(ctx.parsed.y)}`,
+            },
+          },
         },
         scales: {
           y: {
             beginAtZero: true,
             ticks: { color: "#64748B", precision: 0 },
             grid: { color: "rgba(0,0,0,0.05)" },
-            title: { display: true, text: "Pendaftar / hari", color: "#64748B", font: { size: 11 } },
+            title: { display: true, text: "Pendaftar / hari (WIB)", color: "#64748B", font: { size: 11 } },
           },
           y1: {
             beginAtZero: true,
             position: "right",
             ticks: { color: "#B38A2B" },
             grid: { drawOnChartArea: false },
-            title: { display: true, text: "Akumulasi", color: "#B38A2B", font: { size: 11 } },
+            title: { display: true, text: "Akumulasi total", color: "#B38A2B", font: { size: 11 } },
           },
           x: {
             ticks: { color: "#64748B", maxRotation: 0, autoSkip: true, maxTicksLimit: 12 },
