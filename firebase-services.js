@@ -10,8 +10,8 @@
 import { initializeApp }
   from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import {
-  getFirestore, collection, doc, setDoc, getDoc, getDocs,
-  updateDoc, deleteDoc, query, where, orderBy, onSnapshot,
+  getFirestore, collection, doc, addDoc, setDoc, getDoc, getDocs,
+  updateDoc, deleteDoc, query, where, orderBy, limit, onSnapshot,
   serverTimestamp, Timestamp
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import {
@@ -42,8 +42,8 @@ setPersistence(auth, browserLocalPersistence).catch(() => {});
 
 /* =============== Re-export SDK functions =============== */
 export {
-  collection, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc,
-  query, where, orderBy, onSnapshot, serverTimestamp, Timestamp,
+  collection, doc, addDoc, setDoc, getDoc, getDocs, updateDoc, deleteDoc,
+  query, where, orderBy, limit, onSnapshot, serverTimestamp, Timestamp,
   ref, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject,
   GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
 };
@@ -51,6 +51,7 @@ export {
 /* =============== Nama koleksi (konstanta) =============== */
 export const REGISTRATIONS = "registrations";
 export const ADMINS = "admins";
+export const EDIT_LOGS = "editLogs";
 export const UPLOADS_PREFIX = "uploads";
 
 /* =============== Helper: status admin =============== */
@@ -180,4 +181,169 @@ export async function createRegistration(docId, payload) {
   };
   await setDoc(doc(db, REGISTRATIONS, docId), registration);
   return docId;
+}
+
+/* =============================================================
+ * ADMIN — EDIT, DELETE, & AUDIT LOG
+ * ============================================================= */
+
+/**
+ * Tulis 1 entry ke koleksi `editLogs`. Dipanggil otomatis oleh
+ * updateRegistration / deleteRegistration / replaceRegistrationFile.
+ * Tidak melempar error agar aksi utama tetap sukses meski log gagal.
+ */
+export async function writeEditLog(entry) {
+  try {
+    await addDoc(collection(db, EDIT_LOGS), {
+      ...entry,
+      changedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.warn("[editLog] gagal mencatat:", err);
+  }
+}
+
+/**
+ * Update field-field pendaftar + tulis audit log. `changes` adalah
+ * array { field, oldValue, newValue, label? }.
+ *
+ * Field yang diset null akan dihapus (deleteField). Untuk now, kita
+ * timpa langsung dengan nilai baru.
+ */
+export async function updateRegistrationFields(docId, updates, changes, byUser) {
+  if (!docId) throw new Error("docId wajib diisi");
+  if (!updates || !Object.keys(updates).length) return;
+
+  await updateDoc(doc(db, REGISTRATIONS, docId), updates);
+
+  await writeEditLog({
+    action: "edit",
+    registrationId: docId,
+    registrationKode: updates._kodeForLog || null,
+    registrationName: updates._namaForLog || null,
+    changes: (changes || []).map((c) => ({
+      field: c.field,
+      label: c.label || c.field,
+      oldValue: serializableValue(c.oldValue),
+      newValue: serializableValue(c.newValue),
+    })),
+    changedBy: byUser?.email || null,
+    changedByName: byUser?.displayName || byUser?.email || null,
+  });
+}
+
+/**
+ * Hapus pendaftar. Kalau `alsoDeleteFiles` true, semua file di
+ * `berkas` ikut dihapus dari Storage (best-effort, tidak gagalkan
+ * delete dokumen kalau file delete gagal).
+ */
+export async function deleteRegistration(docId, registration, byUser, alsoDeleteFiles) {
+  if (!docId) throw new Error("docId wajib diisi");
+
+  const deletedFiles = [];
+  const failedFiles = [];
+
+  if (alsoDeleteFiles && registration?.berkas && typeof registration.berkas === "object") {
+    for (const [key, meta] of Object.entries(registration.berkas)) {
+      if (!meta || !meta.path) continue;
+      try {
+        await deleteObject(ref(storage, meta.path));
+        deletedFiles.push({ field: key, path: meta.path });
+      } catch (err) {
+        // Best-effort: log dan lanjut
+        console.warn(`[delete] gagal hapus file ${meta.path}:`, err);
+        failedFiles.push({ field: key, path: meta.path, error: String(err?.code || err) });
+      }
+    }
+  }
+
+  await deleteDoc(doc(db, REGISTRATIONS, docId));
+
+  await writeEditLog({
+    action: "delete",
+    registrationId: docId,
+    registrationKode: registration?.kode || null,
+    registrationName: registration?.namaLengkap || null,
+    snapshot: snapshotForLog(registration),
+    deletedFiles,
+    failedFiles,
+    changedBy: byUser?.email || null,
+    changedByName: byUser?.displayName || byUser?.email || null,
+  });
+}
+
+/**
+ * Upload file pengganti dengan path baru yang berisi timestamp,
+ * sehingga file lama tetap tersimpan di Storage sebagai backup.
+ *
+ * Format path: uploads/{docId}/{field}-replaced-{YYYYMMDD-HHMMSS}.{ext}
+ *
+ * Mengembalikan metadata baru yang siap dipakai untuk update field
+ * `berkas[field]` di Firestore.
+ */
+export async function replaceRegistrationFile(docId, field, file) {
+  const detected = await detectMimeFromMagic(file);
+  const rawExt = (file.name.split(".").pop() || "").toLowerCase();
+  const contentType = detected || EXT_TO_MIME[rawExt] || file.type || "application/octet-stream";
+  const ext = MIME_TO_EXT[contentType] || (EXT_TO_MIME[rawExt] ? rawExt : "bin");
+
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "").replace("T", "-");
+  const safePath = `${UPLOADS_PREFIX}/${docId}/${field}-replaced-${stamp}.${ext}`;
+  const fileRef = ref(storage, safePath);
+  await uploadBytes(fileRef, file, { contentType });
+  const url = await getDownloadURL(fileRef);
+  return {
+    path: safePath,
+    url,
+    name: file.name,
+    size: file.size,
+    type: contentType,
+    replacedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Best-effort: hapus 1 file di Storage. Tidak melempar error supaya
+ * UI tetap responsif kalau file sudah lebih dulu hilang.
+ */
+export async function tryDeleteStorageFile(path) {
+  if (!path) return false;
+  try {
+    await deleteObject(ref(storage, path));
+    return true;
+  } catch (err) {
+    console.warn(`[storage] gagal hapus ${path}:`, err);
+    return false;
+  }
+}
+
+/* =============== Helpers untuk audit log =============== */
+
+function serializableValue(v) {
+  if (v == null) return null;
+  if (v instanceof Date) return v.toISOString();
+  if (typeof v === "object") {
+    if (typeof v.toDate === "function") {
+      try { return v.toDate().toISOString(); } catch (_) {}
+    }
+    // Truncate sangat panjang supaya doc log tidak mahal
+    try {
+      const s = JSON.stringify(v);
+      return s.length > 2000 ? s.slice(0, 2000) + "…" : v;
+    } catch (_) { return String(v); }
+  }
+  if (typeof v === "string" && v.length > 2000) return v.slice(0, 2000) + "…";
+  return v;
+}
+
+function snapshotForLog(registration) {
+  if (!registration) return null;
+  // Buang field besar (berkas) supaya log ringkas, simpan ringkasan
+  const { berkas, ...rest } = registration;
+  const filesSummary = berkas
+    ? Object.fromEntries(
+        Object.entries(berkas).map(([k, v]) => [k, v ? { name: v.name, path: v.path, size: v.size } : null])
+      )
+    : null;
+  return { ...rest, _berkasRingkas: filesSummary };
 }

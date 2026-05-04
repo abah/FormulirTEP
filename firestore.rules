@@ -25,6 +25,19 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // =========== EDIT LOGS (audit trail edit/delete admin) ===========
+    match /editLogs/{logId} {
+      // Hanya admin yang boleh baca riwayat audit.
+      allow read: if isAdmin();
+      // Hanya admin yang boleh menulis log baru. Field changedBy harus
+      // sama dengan email user yang sedang login (mencegah forgery).
+      allow create: if isAdmin()
+                      && request.resource.data.changedBy == request.auth.token.email
+                      && request.resource.data.changedAt == request.time;
+      // Log tidak boleh diubah/dihapus, untuk integritas audit trail.
+      allow update, delete: if false;
+    }
+
     // Default deny lain-lain.
     match /{document=**} {
       allow read, write: if false;

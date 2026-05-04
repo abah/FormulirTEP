@@ -5,11 +5,13 @@
 
 import {
   auth, db, storage,
-  REGISTRATIONS,
+  REGISTRATIONS, EDIT_LOGS,
   isAdmin,
-  doc, updateDoc, deleteDoc, collection, onSnapshot, query, orderBy,
+  doc, updateDoc, deleteDoc, collection, onSnapshot, query, where, orderBy, limit,
   serverTimestamp,
   GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
+  updateRegistrationFields, deleteRegistration as svcDeleteRegistration,
+  replaceRegistrationFile, tryDeleteStorageFile,
 } from "./firebase-services.js";
 
 (() => {
@@ -123,6 +125,11 @@ import {
     page: 1,
     pageSize: 10,
     activeId: null,
+    editing: false,            // mode edit aktif?
+    editValues: {},            // staging form values
+    editFiles: {},             // { fieldName: File } file baru yang akan di-upload
+    editLogs: [],              // audit log untuk pendaftar yang sedang dibuka
+    auditUnsub: null,          // unsubscribe listener audit log per pendaftar
   };
 
   /* ============================================================
@@ -159,6 +166,17 @@ import {
     modalBody: $("#modalBody"),
     modalVerify: $("#modalVerify"),
     modalReject: $("#modalReject"),
+    modalEdit: $("#modalEdit"),
+    modalDelete: $("#modalDelete"),
+    modalFootView: $("#modalFootView"),
+    modalFootEdit: $("#modalFootEdit"),
+    editCancel: $("#editCancel"),
+    editSave: $("#editSave"),
+    deleteDialog: $("#deleteDialog"),
+    deleteDialogTitle: $("#deleteDialogTitle"),
+    deletePreview: $("#deletePreview"),
+    deleteAlsoFiles: $("#deleteAlsoFiles"),
+    deleteConfirm: $("#deleteConfirm"),
     // Executive view
     viewOverview: $("#viewOverview"),
     viewRegistrations: $("#viewRegistrations"),
@@ -995,6 +1013,331 @@ import {
     const reg = state.all.find((r) => r.id === id);
     if (!reg) return;
     state.activeId = id;
+    state.editLogs = []; // reset cache log; akan diisi lewat onSnapshot
+    setEditMode(false);  // memicu renderViewMode otomatis
+
+    el.modal.hidden = false;
+    el.modal.setAttribute("aria-hidden", "false");
+    document.body.style.overflow = "hidden";
+
+    // Subscribe ke audit log untuk pendaftar ini (realtime)
+    subscribeAuditLogs(id);
+  }
+  function closeDetail() {
+    if (state.editing) {
+      // Konfirmasi kalau ada perubahan yang belum disimpan
+      const hasChanges = Object.keys(state.editValues).length > 0
+                       || Object.keys(state.editFiles).length > 0;
+      if (hasChanges && !confirm("Ada perubahan yang belum disimpan. Yakin tutup tanpa menyimpan?")) return;
+    }
+    el.modal.hidden = true;
+    el.modal.setAttribute("aria-hidden", "true");
+    document.body.style.overflow = "";
+    state.activeId = null;
+    state.editing = false;
+    state.editValues = {};
+    state.editFiles = {};
+    state.editLogs = [];
+    if (state.auditUnsub) { state.auditUnsub(); state.auditUnsub = null; }
+    setEditMode(false);
+  }
+
+  async function setStatus(newStatus) {
+    if (!state.activeId) return;
+    try {
+      await DataSource.updateStatus(state.activeId, newStatus, auth.currentUser?.email || null);
+      // onSnapshot akan otomatis refresh, namun update visual modal segera:
+      el.modalStatus.className = "status-pill is-" + newStatus;
+      el.modalStatus.textContent = STATUS_LABEL[newStatus];
+    } catch (err) {
+      console.error(err);
+      alert("Gagal memperbarui status. Pastikan Anda masih masuk sebagai admin.");
+    }
+  }
+
+  /* ============================================================
+   *  EDIT MODE — schema field, render form, save, audit log
+   * ============================================================ */
+
+  // Schema field: tipe input + label + opsi pilihan. Field yang TIDAK
+  // tercantum di sini tidak akan muncul di form edit (kunci, file, dll).
+  // Order penting: menentukan urutan tampil di form.
+  const PT_MITRA_OPTIONS = [
+    "Universitas Indonesia (UI)",
+    "Institut Teknologi Bandung (ITB)",
+    "Institut Pertanian Bogor (IPB)",
+    "Universitas Gadjah Mada (UGM)",
+    "Institut Teknologi Sepuluh Nopember (ITS)",
+    "Universitas Hasanuddin (UNHAS)",
+    "Universitas Brawijaya (UB)",
+    "Universitas Padjadjaran (UNPAD)",
+    "Universitas Diponegoro (UNDIP)",
+    "Universitas Sebelas Maret (UNS)",
+  ];
+  const SIZE_OPTIONS = ["S", "M", "L", "XL", "2XL", "3XL", "4XL"];
+
+  const FIELD_SCHEMA = [
+    // -- Identitas --
+    { section: "Identitas" },
+    { key: "namaLengkap", label: "Nama Lengkap", type: "text", full: true },
+    { key: "namaGelar", label: "Nama + Gelar", type: "text" },
+    { key: "kewarganegaraan", label: "Kewarganegaraan", type: "text" },
+    { key: "tempatLahir", label: "Tempat Lahir", type: "text" },
+    { key: "tanggalLahir", label: "Tanggal Lahir", type: "date" },
+    { key: "jenisKelamin", label: "Jenis Kelamin", type: "select", options: ["Laki-laki", "Perempuan"] },
+    { key: "sukuBangsa", label: "Suku Bangsa", type: "text" },
+    { key: "asalDaerah", label: "Asal Daerah", type: "text" },
+    { key: "alamatDomisili", label: "Alamat Domisili", type: "textarea", full: true },
+    { key: "keluargaTransmigran", label: "Keluarga Transmigran", type: "select", options: ["Iya", "Tidak"] },
+    { key: "namaOrangTua", label: "Nama Orang Tua (Transmigran)", type: "text", showIf: (v) => v.keluargaTransmigran === "Iya" },
+    { key: "tahunPenempatan", label: "Tahun Penempatan", type: "text", showIf: (v) => v.keluargaTransmigran === "Iya" },
+    { key: "lokasiTransmigrasi", label: "Lokasi Transmigrasi", type: "text", showIf: (v) => v.keluargaTransmigran === "Iya" },
+    // -- Kontak --
+    { section: "Kontak" },
+    { key: "email", label: "Email", type: "email" },
+    { key: "emailAktif", label: "Email Aktif", type: "email" },
+    { key: "whatsapp", label: "WhatsApp", type: "tel" },
+    // -- Akademik --
+    { section: "Akademik" },
+    { key: "ptMitra", label: "PT Mitra (Induk)", type: "select", options: PT_MITRA_OPTIONS, full: true },
+    { key: "ptAsal", label: "PT Asal", type: "text", full: true,
+      hint: "Kalau dulu pendaftar memilih 'Lainnya', isikan nama PT Asal di sini langsung." },
+    { key: "ptAsalOther", label: "PT Asal (isian lain - jika ada)", type: "text" },
+    { key: "jenjang", label: "Jenjang", type: "select", options: ["Diploma", "S1", "S2", "S3"] },
+    { key: "statusPendidikan", label: "Status Pendidikan", type: "select",
+      options: ["Pasca Sarjana", "S1 Lulus", "S1 Berjalan", "Lainnya"] },
+    { key: "prodiPT", label: "Program Studi", type: "text", full: true },
+    // -- Posisi --
+    { section: "Posisi yang Dilamar" },
+    { key: "posisi", label: "Posisi", type: "text", full: true },
+    { key: "masaWaktuKegiatan", label: "Masa Waktu Kegiatan", type: "select", options: ["12 bulan", "4 bulan"] },
+    // -- Pengalaman --
+    { section: "Pengalaman & Portofolio" },
+    { key: "pengalamanKarya", label: "Pengalaman / Karya Ilmiah", type: "textarea", full: true },
+    { key: "pengalamanTim", label: "Pengalaman Tim", type: "textarea", full: true },
+    // -- Ukuran & Biometrik --
+    { section: "Ukuran Seragam & Biometrik" },
+    { key: "ukuranKemeja", label: "Ukuran Kemeja", type: "select", options: SIZE_OPTIONS },
+    { key: "ukuranCelana", label: "Ukuran Celana", type: "select", options: SIZE_OPTIONS },
+    { key: "ukuranRompi", label: "Ukuran Rompi", type: "select", options: SIZE_OPTIONS },
+    { key: "ukuranJaket", label: "Ukuran Jaket", type: "select", options: SIZE_OPTIONS },
+    { key: "tinggiBadan", label: "Tinggi Badan (cm)", type: "number", min: 100, max: 250 },
+    { key: "beratBadan", label: "Berat Badan (kg)", type: "number", min: 30, max: 200 },
+    { key: "golonganDarah", label: "Golongan Darah", type: "select", options: ["A", "B", "AB", "O", "Tidak tahu"] },
+    // -- Kontak Darurat --
+    { section: "Kontak Darurat" },
+    { key: "namaDarurat", label: "Nama", type: "text" },
+    { key: "hubunganDarurat", label: "Hubungan", type: "text" },
+    { key: "teleponDarurat", label: "Telepon", type: "tel" },
+    { key: "alamatDarurat", label: "Alamat", type: "textarea", full: true },
+    // -- Berkas --
+    { section: "Berkas" },
+    { key: "berkas.pasFoto", label: "Pas Foto 4×6", type: "file", fieldKey: "pasFoto" },
+    { key: "berkas.ijazah", label: "Ijazah / SKL", type: "file", fieldKey: "ijazah" },
+    { key: "berkas.suratIntegritas", label: "Surat Pernyataan Integritas & Komitmen", type: "file", fieldKey: "suratIntegritas" },
+    { key: "berkas.suratRekomendasi", label: "Surat Rekomendasi", type: "file", fieldKey: "suratRekomendasi" },
+    { key: "berkas.suratBersedia", label: "Surat Pernyataan Bersedia Mengikuti Kegiatan", type: "file", fieldKey: "suratBersedia" },
+    { key: "berkas.portoKarya", label: "Portofolio Karya Ilmiah", type: "file", fieldKey: "portoKarya" },
+    { key: "berkas.portoTim", label: "Portofolio Pengalaman Tim", type: "file", fieldKey: "portoTim" },
+  ];
+
+  // Field yang dikunci (tidak boleh diedit lewat UI)
+  const LOCKED_FIELDS = new Set(["nomorId", "kode", "submittedAt", "status", "verifiedAt", "verifiedBy"]);
+
+  /**
+   * Render form edit di modal body. Mengisi state.editValues dengan
+   * snapshot awal supaya bisa dideteksi perubahan saat save.
+   */
+  function renderEditForm(reg) {
+    state.editValues = {};
+    state.editFiles = {};
+
+    // Snapshot awal: salin semua field yang ada di schema
+    FIELD_SCHEMA.forEach((f) => {
+      if (f.section || f.type === "file") return;
+      state.editValues[f.key] = reg[f.key] === undefined ? "" : reg[f.key];
+    });
+
+    const lockedRow = (label, value, badge = "Kunci") => `
+      <div class="edit-field edit-field--full edit-field--readonly">
+        <label class="edit-field__label">
+          ${esc(label)}
+          <span class="edit-field__label-badge edit-field__label-badge--lock">🔒 ${esc(badge)}</span>
+        </label>
+        <input class="edit-field__input" type="text" value="${esc(value || "—")}" readonly />
+      </div>`;
+
+    const sections = [];
+    let currentSection = null;
+    let currentFields = [];
+
+    const flushSection = () => {
+      if (currentSection == null) return;
+      sections.push(`
+        <section class="edit-section">
+          <div class="edit-section__title">${esc(currentSection)}</div>
+          <div class="edit-grid">${currentFields.join("")}</div>
+        </section>
+      `);
+      currentFields = [];
+    };
+
+    FIELD_SCHEMA.forEach((f) => {
+      if (f.section) {
+        flushSection();
+        currentSection = f.section;
+        return;
+      }
+      if (f.type === "file") {
+        currentFields.push(renderFileField(reg, f));
+        return;
+      }
+      currentFields.push(renderInputField(reg, f));
+    });
+    flushSection();
+
+    // Section locked fields di paling atas (sebelum sections lain)
+    const lockedSection = `
+      <section class="edit-section">
+        <div class="edit-section__title">Identitas Kunci (tidak bisa diedit)</div>
+        <div class="edit-grid">
+          ${lockedRow("Kode Pendaftaran", reg.kode, "Kunci")}
+          ${lockedRow("Nomor Identitas (KTP/Paspor)", reg.nomorId, "Kunci")}
+        </div>
+      </section>`;
+
+    el.modalBody.classList.add("modal__body--edit");
+    el.modalBody.innerHTML = lockedSection + sections.join("");
+    bindEditFormEvents();
+  }
+
+  function renderInputField(reg, f) {
+    const value = state.editValues[f.key] ?? "";
+    const fullCls = f.full ? " edit-field--full" : "";
+    const hint = f.hint ? `<div class="edit-field__hint">${esc(f.hint)}</div>` : "";
+    let input = "";
+
+    if (f.type === "textarea") {
+      input = `<textarea class="edit-field__textarea" data-edit-key="${esc(f.key)}" rows="3">${esc(value)}</textarea>`;
+    } else if (f.type === "select") {
+      const opts = f.options.map((o) =>
+        `<option value="${esc(o)}"${o === value ? " selected" : ""}>${esc(o)}</option>`
+      ).join("");
+      input = `<select class="edit-field__select" data-edit-key="${esc(f.key)}">
+        <option value="">— pilih —</option>
+        ${opts}
+      </select>`;
+    } else {
+      const attrs = [];
+      if (f.min != null) attrs.push(`min="${f.min}"`);
+      if (f.max != null) attrs.push(`max="${f.max}"`);
+      input = `<input class="edit-field__input" type="${f.type || "text"}" data-edit-key="${esc(f.key)}" value="${esc(value)}" ${attrs.join(" ")} />`;
+    }
+
+    // Conditional show: tetap render tapi disembunyikan kalau tidak match
+    const hidden = f.showIf && !f.showIf(state.editValues) ? ' style="display:none"' : "";
+
+    return `
+      <div class="edit-field${fullCls}" data-edit-wrap="${esc(f.key)}"${hidden}>
+        <label class="edit-field__label">${esc(f.label)}</label>
+        ${input}
+        ${hint}
+      </div>`;
+  }
+
+  function renderFileField(reg, f) {
+    const fk = f.fieldKey;
+    const meta = reg.berkas?.[fk];
+    const has = meta && meta.url;
+    const isImg = has && (/^image\//.test(meta.type || "") || /\.(jpe?g|png|webp)$/i.test(meta.name || ""));
+    const badge = has ? (isImg ? (/(png)$/i.test(meta.name || meta.type || "") ? "PNG" : "JPG") : "PDF") : "";
+    const current = !has
+      ? `<span class="edit-file__none">Belum ada berkas terunggah</span>`
+      : `<div class="edit-file__current">
+          ${isImg
+            ? `<img class="edit-file__thumb" src="${esc(meta.url)}" alt="" />`
+            : `<span class="edit-file__icon">${esc(badge)}</span>`}
+          <a href="${esc(meta.url)}" target="_blank" rel="noopener">${esc(meta.name || "berkas")}</a>
+          <span style="margin-left:auto;font-size:11px;color:var(--ink-500)">${formatBytes(meta.size)}</span>
+        </div>`;
+    return `
+      <div class="edit-field edit-field--full" data-edit-file-wrap="${esc(fk)}">
+        <label class="edit-field__label">${esc(f.label)}</label>
+        <div class="edit-file">
+          ${current}
+          <input type="file" class="edit-file__input" data-edit-file="${esc(fk)}"
+                 accept=".pdf,application/pdf,.jpg,.jpeg,.png,image/jpeg,image/png" />
+          <span class="edit-file__newfile" data-edit-file-newname="${esc(fk)}" hidden></span>
+        </div>
+      </div>`;
+  }
+
+  function bindEditFormEvents() {
+    // Tracking perubahan input
+    $$("[data-edit-key]", el.modalBody).forEach((inp) => {
+      inp.addEventListener("input", () => {
+        const k = inp.dataset.editKey;
+        let v = inp.value;
+        if (inp.type === "number") v = v === "" ? "" : Number(v);
+        state.editValues[k] = v;
+
+        // Re-evaluate conditional fields kalau key ini punya dependent
+        if (k === "keluargaTransmigran") {
+          ["namaOrangTua", "tahunPenempatan", "lokasiTransmigrasi"].forEach((dep) => {
+            const wrap = el.modalBody.querySelector(`[data-edit-wrap="${dep}"]`);
+            if (wrap) wrap.style.display = (v === "Iya" ? "" : "none");
+          });
+        }
+      });
+      inp.addEventListener("change", () => inp.dispatchEvent(new Event("input")));
+    });
+
+    // Tracking file replacement
+    $$("[data-edit-file]", el.modalBody).forEach((inp) => {
+      inp.addEventListener("change", (e) => {
+        const fk = inp.dataset.editFile;
+        const file = e.target.files[0];
+        const newNameEl = el.modalBody.querySelector(`[data-edit-file-newname="${fk}"]`);
+        if (!file) {
+          delete state.editFiles[fk];
+          if (newNameEl) { newNameEl.textContent = ""; newNameEl.hidden = true; }
+          return;
+        }
+        // Validasi sederhana: ukuran < 15 MB
+        if (file.size > 15 * 1024 * 1024) {
+          alert(`File "${file.name}" terlalu besar (>15 MB). Gunakan file < 15 MB.`);
+          inp.value = "";
+          delete state.editFiles[fk];
+          if (newNameEl) { newNameEl.textContent = ""; newNameEl.hidden = true; }
+          return;
+        }
+        state.editFiles[fk] = file;
+        if (newNameEl) {
+          newNameEl.textContent = `✓ Berkas baru: ${file.name} (${formatBytes(file.size)}) — akan diunggah saat Simpan`;
+          newNameEl.hidden = false;
+        }
+      });
+    });
+  }
+
+  function setEditMode(on) {
+    state.editing = !!on;
+    el.modalFootView.hidden = on;
+    el.modalFootEdit.hidden = !on;
+    el.modal.classList.toggle("modal--editing", on);
+
+    if (!on) {
+      el.modalBody.classList.remove("modal__body--edit");
+      // Re-render view dari data terkini
+      const reg = state.all.find((r) => r.id === state.activeId);
+      if (reg) renderViewMode(reg);
+    }
+  }
+
+  // Re-render view mode (extract bagian rendering body dari openDetail
+  // agar bisa dipakai ulang setelah save)
+  function renderViewMode(reg) {
+    // Build & inject body lagi (sama dengan openDetail body), lalu sertakan audit log
     el.modalKode.textContent = reg.kode || "—";
     el.modalStatus.className = "status-pill is-" + reg.status;
     el.modalStatus.textContent = STATUS_LABEL[reg.status] || reg.status;
@@ -1003,18 +1346,13 @@ import {
       <div class="modal__row ${full ? 'modal__row--full' : ''}">
         <div class="modal__label">${esc(label)}</div>
         <div class="modal__value ${value ? '' : 'modal__value--muted'}">${esc(value || '—')}</div>
-      </div>
-    `;
+      </div>`;
     const rowHTML = (label, html, full = false) => `
       <div class="modal__row ${full ? 'modal__row--full' : ''}">
         <div class="modal__label">${esc(label)}</div>
         <div class="modal__value">${html}</div>
-      </div>
-    `;
-    const section = (title) => `
-      <div class="modal__section-title">${esc(title)}</div>
-    `;
-
+      </div>`;
+    const section = (title) => `<div class="modal__section-title">${esc(title)}</div>`;
     const ptAsal = resolveOther(reg.ptAsal, reg.ptAsalOther);
     const ukuranKemeja = resolveOther(reg.ukuranKemeja, reg.ukuranKemejaOther);
     const ukuranCelana = resolveOther(reg.ukuranCelana, reg.ukuranCelanaOther);
@@ -1022,7 +1360,6 @@ import {
     const ukuranJaket = resolveOther(reg.ukuranJaket, reg.ukuranJaketOther);
 
     el.modalBody.innerHTML = [
-      // --- Identitas ---
       section("Identitas"),
       row("Nama Lengkap", reg.namaLengkap, true),
       row("Nama + Gelar", reg.namaGelar),
@@ -1037,32 +1374,22 @@ import {
       row("Nama Orang Tua (Transmigran)", (reg.keluargaTransmigran || reg.asalKawasanTransmigrasi) === "Iya" ? reg.namaOrangTua : "—"),
       row("Tahun Penempatan", (reg.keluargaTransmigran || reg.asalKawasanTransmigrasi) === "Iya" ? reg.tahunPenempatan : "—"),
       row("Lokasi Transmigrasi", (reg.keluargaTransmigran || reg.asalKawasanTransmigrasi) === "Iya" ? reg.lokasiTransmigrasi : "—"),
-
-      // --- Kontak ---
       section("Kontak"),
       row("Email", reg.email),
       row("Email Aktif", reg.emailAktif),
       row("WhatsApp", reg.whatsapp),
-
-      // --- Akademik ---
       section("Akademik"),
       row("Perguruan Tinggi Mitra (Induk)", reg.ptMitra, true),
       row("Perguruan Tinggi Asal", ptAsal, true),
       row("Jenjang", reg.jenjang),
       row("Status Pendidikan", reg.statusPendidikan),
       row("Program Studi", reg.prodiPT),
-
-      // --- Posisi ---
       section("Posisi yang Dilamar"),
       row("Posisi", reg.posisi, true),
       row("Masa Waktu Kegiatan", reg.masaWaktuKegiatan),
-
-      // --- Pengalaman ---
       section("Pengalaman & Portofolio"),
       rowHTML("Pengalaman / Karya Ilmiah", longText(reg.pengalamanKarya), true),
       rowHTML("Pengalaman Tim", longText(reg.pengalamanTim), true),
-
-      // --- Ukuran Seragam & Biometrik ---
       section("Ukuran Seragam & Biometrik"),
       row("Ukuran Kemeja", ukuranKemeja),
       row("Ukuran Celana", ukuranCelana),
@@ -1071,52 +1398,218 @@ import {
       row("Tinggi Badan (cm)", reg.tinggiBadan),
       row("Berat Badan (kg)", reg.beratBadan),
       row("Golongan Darah", reg.golonganDarah),
-
-      // --- Kontak Darurat ---
       section("Kontak Darurat"),
       row("Nama", reg.namaDarurat),
       row("Hubungan", reg.hubunganDarurat),
       row("Telepon", reg.teleponDarurat),
       row("Alamat", reg.alamatDarurat, true),
-
-      // --- Persetujuan ---
       section("Persetujuan"),
       row("Pernyataan kebenaran data", reg.pernyataanBenar || "—"),
       row("Persetujuan kegiatan", reg.persetujuanKegiatan || "—"),
-
-      // --- Metadata ---
       section("Metadata Pendaftaran"),
       row("Kode Pendaftaran", reg.kode),
       row("Tanggal Daftar", formatDate(reg.submittedAt)),
       row("Status", STATUS_LABEL[reg.status] || reg.status),
       row("Tanggal Verifikasi", reg.verifiedAt ? formatDate(reg.verifiedAt) : null),
       row("Diverifikasi oleh", reg.verifiedBy),
-
-      // --- Berkas ---
       renderBerkas(reg.berkas),
+      renderAuditLogSection(),
     ].join("");
-
-    el.modal.hidden = false;
-    el.modal.setAttribute("aria-hidden", "false");
-    document.body.style.overflow = "hidden";
-  }
-  function closeDetail() {
-    el.modal.hidden = true;
-    el.modal.setAttribute("aria-hidden", "true");
-    document.body.style.overflow = "";
-    state.activeId = null;
   }
 
-  async function setStatus(newStatus) {
-    if (!state.activeId) return;
+  /* ---------- AUDIT LOG: subscribe + render ---------- */
+
+  function subscribeAuditLogs(registrationId) {
+    if (state.auditUnsub) { state.auditUnsub(); state.auditUnsub = null; }
     try {
-      await DataSource.updateStatus(state.activeId, newStatus, auth.currentUser?.email || null);
-      // onSnapshot akan otomatis refresh, namun update visual modal segera:
-      el.modalStatus.className = "status-pill is-" + newStatus;
-      el.modalStatus.textContent = STATUS_LABEL[newStatus];
+      const q = query(
+        collection(db, EDIT_LOGS),
+        where("registrationId", "==", registrationId),
+        orderBy("changedAt", "desc"),
+        limit(20),
+      );
+      state.auditUnsub = onSnapshot(q, (snap) => {
+        state.editLogs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        // Hanya re-render section log kalau modal sedang view mode
+        if (!state.editing) {
+          const cont = el.modalBody.querySelector(".audit-log");
+          if (cont) cont.outerHTML = renderAuditLogSection();
+        }
+      }, (err) => {
+        // Index belum dibangun? Tampilkan pesan ramah, jangan crash.
+        console.warn("[auditLogs] subscribe gagal:", err);
+        state.editLogs = [];
+      });
     } catch (err) {
-      console.error(err);
-      alert("Gagal memperbarui status. Pastikan Anda masih masuk sebagai admin.");
+      console.warn("[auditLogs] error:", err);
+    }
+  }
+
+  function renderAuditLogSection() {
+    if (!state.editLogs.length) {
+      return `
+        <div class="audit-log">
+          <div class="audit-log__title">Riwayat Edit</div>
+          <div class="audit-log__empty">Belum ada perubahan tercatat untuk pendaftar ini.</div>
+        </div>`;
+    }
+    const items = state.editLogs.map((log) => {
+      const action = log.action || "edit";
+      const icon = action === "delete" ? "🗑️"
+                 : action === "verify" ? "✓"
+                 : action === "reject" ? "✗"
+                 : "✏️";
+      const head = `
+        <div class="audit-entry__head">
+          <span><strong>${icon} ${esc(actionLabel(action))}</strong>
+            &middot; <span class="audit-entry__by">${esc(log.changedByName || log.changedBy || "—")}</span>
+          </span>
+          <span>${fmtDateTimeWIB(log.changedAt) || "—"}</span>
+        </div>`;
+      let body = "";
+      if (action === "edit" && Array.isArray(log.changes)) {
+        body = `<div class="audit-entry__changes">${log.changes.map((c) => `
+          <div class="audit-entry__change">
+            <span class="audit-entry__change-field">${esc(c.label || c.field)}:</span>
+            <span class="audit-entry__diff-old">${esc(formatLogValue(c.oldValue))}</span>
+            →
+            <span class="audit-entry__diff-new">${esc(formatLogValue(c.newValue))}</span>
+          </div>`).join("")}</div>`;
+      } else if (action === "delete") {
+        body = `<div class="audit-entry__change">Pendaftar <strong>${esc(log.registrationName || "")}</strong> dihapus permanen${
+          Array.isArray(log.deletedFiles) && log.deletedFiles.length
+            ? ` &middot; ${log.deletedFiles.length} file di Storage ikut dihapus`
+            : ""
+        }.</div>`;
+      }
+      return `<div class="audit-entry audit-entry--${esc(action)}">${head}${body}</div>`;
+    }).join("");
+    return `
+      <div class="audit-log">
+        <div class="audit-log__title">Riwayat Edit (${state.editLogs.length})</div>
+        <div class="audit-log__list">${items}</div>
+      </div>`;
+  }
+
+  function actionLabel(a) {
+    return ({ edit: "Edit Data", delete: "Hapus Pendaftar", verify: "Verifikasi", reject: "Tolak" })[a] || a;
+  }
+  function formatLogValue(v) {
+    if (v == null || v === "") return "(kosong)";
+    if (typeof v === "object") {
+      try { return JSON.stringify(v).slice(0, 80); } catch (_) { return "(kompleks)"; }
+    }
+    const s = String(v);
+    return s.length > 120 ? s.slice(0, 120) + "…" : s;
+  }
+
+  /* ---------- SAVE EDIT ---------- */
+
+  async function saveEdit() {
+    if (!state.activeId) return;
+    const reg = state.all.find((r) => r.id === state.activeId);
+    if (!reg) return;
+
+    // Hitung perubahan field non-file
+    const changes = [];
+    const updates = {};
+    Object.entries(state.editValues).forEach(([k, newVal]) => {
+      const oldVal = reg[k] ?? "";
+      // Normalisasi: number kosong = null, string kosong tetap ""
+      let nv = newVal;
+      if (nv === "" && (typeof oldVal === "number")) nv = null;
+      if (nv !== oldVal && !(nv === "" && (oldVal == null || oldVal === ""))) {
+        const f = FIELD_SCHEMA.find((s) => s.key === k);
+        changes.push({ field: k, label: f?.label || k, oldValue: oldVal, newValue: nv });
+        updates[k] = nv;
+      }
+    });
+
+    const fileKeys = Object.keys(state.editFiles);
+    if (!changes.length && !fileKeys.length) {
+      alert("Tidak ada perubahan untuk disimpan.");
+      return;
+    }
+
+    el.editSave.disabled = true;
+    el.editSave.innerHTML = `<span class="spinner"></span>Menyimpan…`;
+
+    try {
+      // 1. Upload file pengganti (kalau ada)
+      const newBerkas = { ...(reg.berkas || {}) };
+      for (const fk of fileKeys) {
+        const file = state.editFiles[fk];
+        const oldMeta = reg.berkas?.[fk];
+        const newMeta = await replaceRegistrationFile(state.activeId, fk, file);
+        newBerkas[fk] = newMeta;
+        const fLabel = FIELD_SCHEMA.find((s) => s.fieldKey === fk)?.label || fk;
+        changes.push({
+          field: `berkas.${fk}`,
+          label: `Berkas: ${fLabel}`,
+          oldValue: oldMeta ? `${oldMeta.name || "berkas lama"} (${formatBytes(oldMeta.size)})` : "(kosong)",
+          newValue: `${file.name} (${formatBytes(file.size)})`,
+        });
+      }
+      if (fileKeys.length) updates.berkas = newBerkas;
+
+      // 2. Tambahkan metadata informational ke audit log
+      updates._kodeForLog = reg.kode;
+      updates._namaForLog = reg.namaLengkap;
+      // Hapus field marker dari payload yang akan ditulis ke Firestore
+      const writeUpdates = { ...updates };
+      delete writeUpdates._kodeForLog;
+      delete writeUpdates._namaForLog;
+
+      await updateRegistrationFields(state.activeId, writeUpdates, changes, auth.currentUser);
+
+      el.editSave.disabled = false;
+      el.editSave.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>Simpan Perubahan`;
+
+      setEditMode(false);
+      // (onSnapshot akan refresh data, view akan ter-render ulang dengan data baru)
+    } catch (err) {
+      console.error("[edit] gagal simpan:", err);
+      alert(`Gagal menyimpan perubahan.\n\n${err?.code || ""}\n${err?.message || err}`);
+      el.editSave.disabled = false;
+      el.editSave.innerHTML = `Simpan Perubahan`;
+    }
+  }
+
+  /* ---------- DELETE ---------- */
+
+  function openDeleteDialog() {
+    if (!state.activeId) return;
+    const reg = state.all.find((r) => r.id === state.activeId);
+    if (!reg) return;
+    el.deleteDialogTitle.textContent = `Hapus pendaftar: ${reg.namaLengkap || reg.kode}?`;
+    el.deletePreview.innerHTML = `
+      <strong>${esc(reg.namaLengkap || "—")}</strong>
+      <small>Kode ${esc(reg.kode || "—")} &middot; ${esc(reg.nomorId || "—")}</small>
+      <small>${esc(reg.email || reg.emailAktif || "—")} &middot; ${esc(reg.posisi || "—")}</small>`;
+    el.deleteAlsoFiles.checked = true;
+    el.deleteDialog.hidden = false;
+    el.deleteDialog.setAttribute("aria-hidden", "false");
+  }
+  function closeDeleteDialog() {
+    el.deleteDialog.hidden = true;
+    el.deleteDialog.setAttribute("aria-hidden", "true");
+  }
+
+  async function confirmDelete() {
+    if (!state.activeId) return;
+    const reg = state.all.find((r) => r.id === state.activeId);
+    if (!reg) return;
+    el.deleteConfirm.disabled = true;
+    el.deleteConfirm.innerHTML = `<span class="spinner"></span>Menghapus…`;
+    try {
+      await svcDeleteRegistration(state.activeId, reg, auth.currentUser, el.deleteAlsoFiles.checked);
+      closeDeleteDialog();
+      closeDetail();
+    } catch (err) {
+      console.error("[delete] gagal:", err);
+      alert(`Gagal menghapus pendaftar.\n\n${err?.code || ""}\n${err?.message || err}`);
+      el.deleteConfirm.disabled = false;
+      el.deleteConfirm.innerHTML = `Ya, Hapus Permanen`;
     }
   }
 
@@ -1490,6 +1983,34 @@ import {
   });
   el.modalVerify.addEventListener("click", () => setStatus("verified"));
   el.modalReject.addEventListener("click", () => setStatus("rejected"));
+
+  // === Edit mode ===
+  el.modalEdit?.addEventListener("click", () => {
+    if (!state.activeId) return;
+    const reg = state.all.find((r) => r.id === state.activeId);
+    if (!reg) return;
+    setEditMode(true);
+    renderEditForm(reg);
+  });
+  el.editCancel?.addEventListener("click", () => {
+    if (Object.keys(state.editValues).length || Object.keys(state.editFiles).length) {
+      if (!confirm("Batalkan edit? Perubahan yang sudah dibuat tidak akan disimpan.")) return;
+    }
+    state.editValues = {};
+    state.editFiles = {};
+    setEditMode(false);
+  });
+  el.editSave?.addEventListener("click", () => saveEdit());
+
+  // === Delete ===
+  el.modalDelete?.addEventListener("click", () => openDeleteDialog());
+  el.deleteDialog?.addEventListener("click", (e) => {
+    if (e.target.closest("[data-close-delete]")) closeDeleteDialog();
+  });
+  el.deleteConfirm?.addEventListener("click", () => confirmDelete());
+  document.addEventListener("keydown", (e) => {
+    if (!el.deleteDialog?.hidden && e.key === "Escape") closeDeleteDialog();
+  });
 
   // Nav items: switch view antara Ringkasan Eksekutif <-> Pendaftaran
   function switchView(view) {
