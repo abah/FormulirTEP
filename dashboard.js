@@ -11,7 +11,7 @@ import {
   serverTimestamp,
   GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
   updateRegistrationFields, deleteRegistration as svcDeleteRegistration,
-  replaceRegistrationFile, tryDeleteStorageFile,
+  replaceRegistrationFile, tryDeleteStorageFile, writeEditLog,
 } from "./firebase-services.js";
 
 (() => {
@@ -35,6 +35,7 @@ import {
               ...data,
               submittedAt: tsToISO(data.submittedAt),
               verifiedAt: tsToISO(data.verifiedAt),
+              rejectedAt: tsToISO(data.rejectedAt),
             };
           });
           onData(rows);
@@ -43,12 +44,23 @@ import {
       );
       return unsubscribeSnapshot;
     },
-    async updateStatus(id, status, by) {
-      await updateDoc(doc(db, REGISTRATIONS, id), {
+    async updateStatus(id, status, by, reason) {
+      const updates = {
         status,
         verifiedAt: status === "pending" ? null : serverTimestamp(),
         verifiedBy: status === "pending" ? null : (by || null),
-      });
+      };
+      if (status === "rejected") {
+        updates.rejectionReason = reason || "(tidak dicantumkan)";
+        updates.rejectedAt = serverTimestamp();
+        updates.rejectedBy = by || null;
+      } else {
+        // Saat verify atau set pending, bersihkan reject metadata
+        updates.rejectionReason = null;
+        updates.rejectedAt = null;
+        updates.rejectedBy = null;
+      }
+      await updateDoc(doc(db, REGISTRATIONS, id), updates);
     },
     async remove(id) {
       await deleteDoc(doc(db, REGISTRATIONS, id));
@@ -177,6 +189,12 @@ import {
     deletePreview: $("#deletePreview"),
     deleteAlsoFiles: $("#deleteAlsoFiles"),
     deleteConfirm: $("#deleteConfirm"),
+    rejectDialog: $("#rejectDialog"),
+    rejectDialogTitle: $("#rejectDialogTitle"),
+    rejectReason: $("#rejectReason"),
+    rejectCharCount: $("#rejectCharCount"),
+    rejectPresets: $("#rejectPresets"),
+    rejectConfirm: $("#rejectConfirm"),
     // Executive view
     viewOverview: $("#viewOverview"),
     viewRegistrations: $("#viewRegistrations"),
@@ -345,7 +363,7 @@ import {
         <td>${esc(r.ptMitra || "—")}</td>
         <td>${esc(r.ptAsal === "__other__" ? (r.ptAsalOther || "—") : (r.ptAsal || "—"))}</td>
         <td>${esc(r.posisi || "—")}</td>
-        <td><span class="status-pill is-${esc(r.status)}">${esc(STATUS_LABEL[r.status] || r.status)}</span></td>
+        <td><span class="status-pill is-${esc(r.status)}"${r.status === "rejected" && r.rejectionReason ? ` title="Alasan: ${esc(r.rejectionReason)}"` : ""}>${esc(STATUS_LABEL[r.status] || r.status)}</span></td>
         <td class="td-date">${formatDateShort(r.submittedAt)}</td>
         <td class="td-actions">
           <button class="icon-btn" aria-label="Lihat detail" data-detail="${esc(r.id)}">
@@ -1042,16 +1060,86 @@ import {
     setEditMode(false);
   }
 
-  async function setStatus(newStatus) {
+  async function setStatus(newStatus, opts) {
     if (!state.activeId) return;
+    const reg = state.all.find((r) => r.id === state.activeId);
+    if (!reg) return;
+    const oldStatus = reg.status;
+    const reason = opts?.reason || null;
+    const user = auth.currentUser;
+    const byEmail = user?.email || null;
+
     try {
-      await DataSource.updateStatus(state.activeId, newStatus, auth.currentUser?.email || null);
-      // onSnapshot akan otomatis refresh, namun update visual modal segera:
+      await DataSource.updateStatus(state.activeId, newStatus, byEmail, reason);
+
+      // Update visual modal segera (onSnapshot akan refresh juga)
       el.modalStatus.className = "status-pill is-" + newStatus;
       el.modalStatus.textContent = STATUS_LABEL[newStatus];
+
+      // Audit log: catat perubahan status + alasan (kalau reject)
+      const changes = [
+        { field: "status", label: "Status", oldValue: oldStatus, newValue: newStatus },
+      ];
+      if (newStatus === "rejected" && reason) {
+        changes.push({
+          field: "rejectionReason", label: "Alasan Penolakan",
+          oldValue: reg.rejectionReason || null, newValue: reason,
+        });
+      }
+      const action = newStatus === "verified" ? "verify"
+                  : newStatus === "rejected" ? "reject"
+                  : "edit";
+      await writeEditLog({
+        action,
+        registrationId: state.activeId,
+        registrationKode: reg.kode,
+        registrationName: reg.namaLengkap,
+        changes,
+        changedBy: byEmail,
+        changedByName: user?.displayName || byEmail,
+      });
     } catch (err) {
       console.error(err);
       alert("Gagal memperbarui status. Pastikan Anda masih masuk sebagai admin.");
+    }
+  }
+
+  /* ---------- REJECT DIALOG ---------- */
+
+  function openRejectDialog() {
+    if (!state.activeId) return;
+    const reg = state.all.find((r) => r.id === state.activeId);
+    if (!reg) return;
+    el.rejectDialogTitle.textContent = `Tolak pendaftaran: ${reg.namaLengkap || reg.kode}?`;
+    el.rejectReason.value = "";
+    el.rejectCharCount.textContent = "0";
+    el.rejectConfirm.disabled = true;
+    el.rejectPresets?.querySelectorAll(".reject-preset").forEach((b) => b.classList.remove("is-active"));
+    el.rejectDialog.hidden = false;
+    el.rejectDialog.setAttribute("aria-hidden", "false");
+    setTimeout(() => el.rejectReason.focus(), 80);
+  }
+  function closeRejectDialog() {
+    el.rejectDialog.hidden = true;
+    el.rejectDialog.setAttribute("aria-hidden", "true");
+  }
+  async function confirmReject() {
+    const reason = (el.rejectReason.value || "").trim();
+    if (!reason) {
+      el.rejectReason.focus();
+      return;
+    }
+    el.rejectConfirm.disabled = true;
+    el.rejectConfirm.innerHTML = `<span class="spinner"></span>Memproses…`;
+    try {
+      await setStatus("rejected", { reason });
+      closeRejectDialog();
+    } catch (err) {
+      console.error("[reject] gagal:", err);
+      alert(`Gagal menolak pendaftar.\n\n${err?.code || ""}\n${err?.message || err}`);
+    } finally {
+      el.rejectConfirm.disabled = false;
+      el.rejectConfirm.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6"/><path d="m9 9 6 6"/></svg>Tolak Pendaftaran`;
     }
   }
 
@@ -1359,7 +1447,24 @@ import {
     const ukuranRompi = resolveOther(reg.ukuranRompi, reg.ukuranRompiOther);
     const ukuranJaket = resolveOther(reg.ukuranJaket, reg.ukuranJaketOther);
 
+    // Banner alasan penolakan kalau status = rejected
+    const rejectBanner = (reg.status === "rejected" && reg.rejectionReason)
+      ? `<div class="rejection-banner">
+          <div class="rejection-banner__head">
+            <span class="rejection-banner__title">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6"/><path d="m9 9 6 6"/></svg>
+              Pendaftaran Ditolak
+            </span>
+            <span class="rejection-banner__meta">
+              ${reg.rejectedBy ? `oleh ${esc(reg.rejectedBy)} ` : ""}${reg.rejectedAt ? `pada ${fmtDateTimeWIB(reg.rejectedAt)}` : ""}
+            </span>
+          </div>
+          <div class="rejection-banner__reason">${esc(reg.rejectionReason)}</div>
+        </div>`
+      : "";
+
     el.modalBody.innerHTML = [
+      rejectBanner,
       section("Identitas"),
       row("Nama Lengkap", reg.namaLengkap, true),
       row("Nama + Gelar", reg.namaGelar),
@@ -1412,6 +1517,9 @@ import {
       row("Status", STATUS_LABEL[reg.status] || reg.status),
       row("Tanggal Verifikasi", reg.verifiedAt ? formatDate(reg.verifiedAt) : null),
       row("Diverifikasi oleh", reg.verifiedBy),
+      reg.status === "rejected" ? row("Alasan Penolakan", reg.rejectionReason || "—", true) : "",
+      reg.status === "rejected" && reg.rejectedAt ? row("Tanggal Ditolak", formatDate(reg.rejectedAt)) : "",
+      reg.status === "rejected" && reg.rejectedBy ? row("Ditolak oleh", reg.rejectedBy) : "",
       renderBerkas(reg.berkas),
       renderAuditLogSection(),
     ].join("");
@@ -1634,6 +1742,9 @@ import {
     ["status", "Status"],
     ["verifiedAt", "Tanggal Verifikasi"],
     ["verifiedBy", "Verifikator"],
+    ["rejectionReason", "Alasan Penolakan"],
+    ["rejectedAt", "Tanggal Ditolak"],
+    ["rejectedBy", "Ditolak oleh"],
     // Identitas
     ["namaLengkap", "Nama Lengkap"],
     ["namaGelar", "Nama + Gelar"],
@@ -1982,7 +2093,33 @@ import {
     if (!el.modal.hidden && e.key === "Escape") closeDetail();
   });
   el.modalVerify.addEventListener("click", () => setStatus("verified"));
-  el.modalReject.addEventListener("click", () => setStatus("rejected"));
+  el.modalReject.addEventListener("click", () => openRejectDialog());
+
+  // === Reject dialog ===
+  el.rejectDialog?.addEventListener("click", (e) => {
+    if (e.target.closest("[data-close-reject]")) closeRejectDialog();
+  });
+  el.rejectReason?.addEventListener("input", (e) => {
+    const len = e.target.value.length;
+    el.rejectCharCount.textContent = String(len);
+    el.rejectConfirm.disabled = e.target.value.trim().length === 0;
+  });
+  el.rejectPresets?.querySelectorAll(".reject-preset").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      el.rejectPresets.querySelectorAll(".reject-preset").forEach((b) => b.classList.remove("is-active"));
+      btn.classList.add("is-active");
+      el.rejectReason.value = btn.dataset.preset || "";
+      el.rejectReason.dispatchEvent(new Event("input"));
+      el.rejectReason.focus();
+    });
+  });
+  el.rejectConfirm?.addEventListener("click", () => confirmReject());
+  document.addEventListener("keydown", (e) => {
+    if (!el.rejectDialog?.hidden && e.key === "Escape") closeRejectDialog();
+    if (!el.rejectDialog?.hidden && (e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      if (!el.rejectConfirm.disabled) confirmReject();
+    }
+  });
 
   // === Edit mode ===
   el.modalEdit?.addEventListener("click", () => {

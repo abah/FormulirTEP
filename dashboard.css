@@ -1264,6 +1264,112 @@
 .delete-option input[type="checkbox"] { margin-top: 3px; flex-shrink: 0; }
 .delete-option small { display: block; color: var(--ink-500); margin-top: 3px; font-size: 12px; }
 
+/* ============= REJECT DIALOG ============= */
+.reject-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 16px;
+}
+.reject-preset {
+  background: var(--ink-50);
+  border: 1px solid var(--ink-200);
+  color: var(--ink-700);
+  font-size: 12px;
+  padding: 6px 11px;
+  border-radius: 16px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  font-family: inherit;
+}
+.reject-preset:hover {
+  background: rgba(212, 168, 83, 0.10);
+  border-color: var(--gold-500);
+  color: var(--navy-900);
+}
+.reject-preset.is-active {
+  background: var(--navy-700);
+  color: #fff;
+  border-color: var(--navy-700);
+}
+.reject-textarea-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-700);
+  margin-top: 4px;
+}
+.reject-textarea {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--ink-200);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--ink-900);
+  background: #fff;
+  outline: 0;
+  resize: vertical;
+  min-height: 88px;
+  font-family: inherit;
+  font-weight: 400;
+  line-height: 1.5;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.reject-textarea:focus {
+  border-color: var(--gold-500);
+  box-shadow: 0 0 0 3px rgba(212, 168, 83, 0.18);
+}
+.reject-char-counter {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-500);
+  text-align: right;
+  margin-top: 4px;
+  font-weight: 400;
+}
+
+/* ============= REJECTION REASON BANNER (di modal view) ============= */
+.rejection-banner {
+  grid-column: 1 / -1;
+  margin-bottom: 6px;
+  padding: 14px 18px;
+  background: rgba(197, 48, 48, 0.06);
+  border: 1px solid rgba(197, 48, 48, 0.25);
+  border-left: 4px solid var(--danger);
+  border-radius: 10px;
+}
+.rejection-banner__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.rejection-banner__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--danger);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.rejection-banner__meta {
+  font-size: 11.5px;
+  color: var(--ink-500);
+}
+.rejection-banner__reason {
+  color: var(--ink-900);
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
 /* ============= BUTTONS (variants tambahan) ============= */
 .btn--danger-outline {
   background: #fff;
