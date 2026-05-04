@@ -204,6 +204,73 @@ legend { padding: 0; }
   background: rgba(255,255,255,0.04);
   border: 1px solid rgba(255,255,255,0.08);
 }
+
+.hero-info-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, rgba(195, 154, 60, 0.16) 0%, rgba(195, 154, 60, 0.08) 100%);
+  border: 1px solid rgba(195, 154, 60, 0.35);
+  color: #f4ebcf;
+  text-decoration: none;
+  transition: background .2s ease, border-color .2s ease, transform .15s ease, box-shadow .2s ease;
+}
+.hero-info-link:hover {
+  background: linear-gradient(135deg, rgba(195, 154, 60, 0.28) 0%, rgba(195, 154, 60, 0.14) 100%);
+  border-color: rgba(195, 154, 60, 0.6);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  color: #fff;
+}
+.hero-info-link:active { transform: translateY(0); box-shadow: none; }
+.hero-info-link:focus-visible {
+  outline: 2px solid rgba(195, 154, 60, 0.85);
+  outline-offset: 2px;
+}
+.hero-info-link__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px; height: 36px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(195, 154, 60, 0.22);
+  color: #f4d68a;
+}
+.hero-info-link__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  line-height: 1.3;
+}
+.hero-info-link__lead {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: rgba(244, 235, 207, 0.7);
+}
+.hero-info-link__title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #fff;
+  margin-top: 2px;
+  word-break: break-word;
+}
+.hero-info-link__arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px; height: 28px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  color: #f4d68a;
+  background: rgba(255, 255, 255, 0.04);
+}
 .hero-meta__item { display: flex; flex-direction: column; line-height: 1.1; }
 .hero-meta__k {
   font-family: var(--font-serif);
@@ -1424,6 +1491,10 @@ legend { padding: 0; }
   }
   .hero-meta__k { font-size: 22px; }
   .hero-meta__v { font-size: 10px; }
+  .hero-info-link { padding: 10px 12px; gap: 10px; margin-top: 12px; }
+  .hero-info-link__icon { width: 32px; height: 32px; }
+  .hero-info-link__title { font-size: 12.5px; }
+  .hero-info-link__lead { font-size: 10px; }
   .stepper__list::before { left: 16px; }
   .stepper__item {
     grid-template-columns: 32px 1fr auto;
