@@ -418,9 +418,13 @@ import {
   }
 
   // Hitung kelengkapan berkas. Berkas wajib (sesuai form): pasFoto,
-  // ijazah, suratIntegritas, suratRekomendasi, suratBersedia. Optional:
-  // portoKarya, portoTim. Kita anggap "lengkap" bila 5 wajib ada.
-  const REQUIRED_FILES = ["pasFoto", "ijazah", "suratIntegritas", "suratRekomendasi", "suratBersedia"];
+  // ijazah, suratIntegritas, suratRekomendasi, suratBersedia, suratSakit,
+  // suratIzinOrtu. Optional: portoKarya, portoTim.
+  const REQUIRED_FILES = [
+    "pasFoto", "ijazah",
+    "suratIntegritas", "suratRekomendasi", "suratBersedia",
+    "suratSakit", "suratIzinOrtu",
+  ];
   function isComplete(reg) {
     if (!reg.berkas || typeof reg.berkas !== "object") return false;
     return REQUIRED_FILES.every((k) => reg.berkas[k] && reg.berkas[k].url);
@@ -970,6 +974,8 @@ import {
     suratIntegritas: "Surat Integritas",
     suratRekomendasi: "Surat Rekomendasi",
     suratBersedia: "Surat Bersedia",
+    suratSakit: "Surat Tidak Pernah Sakit Berat",
+    suratIzinOrtu: "Surat Izin Orang Tua",
   };
   function kindBadge(meta) {
     const t = (meta && meta.type) || "";
@@ -1225,6 +1231,8 @@ import {
     { key: "berkas.suratIntegritas", label: "Surat Pernyataan Integritas & Komitmen", type: "file", fieldKey: "suratIntegritas" },
     { key: "berkas.suratRekomendasi", label: "Surat Rekomendasi", type: "file", fieldKey: "suratRekomendasi" },
     { key: "berkas.suratBersedia", label: "Surat Pernyataan Bersedia Mengikuti Kegiatan", type: "file", fieldKey: "suratBersedia" },
+    { key: "berkas.suratSakit", label: "Surat Pernyataan Tidak Pernah Sakit Berat/Kronis", type: "file", fieldKey: "suratSakit" },
+    { key: "berkas.suratIzinOrtu", label: "Surat Izin Orang Tua", type: "file", fieldKey: "suratIzinOrtu" },
     { key: "berkas.portoKarya", label: "Portofolio Karya Ilmiah", type: "file", fieldKey: "portoKarya" },
     { key: "berkas.portoTim", label: "Portofolio Pengalaman Tim", type: "file", fieldKey: "portoTim" },
   ];
@@ -1812,6 +1820,8 @@ import {
     suratIntegritas: "Surat Pernyataan Integritas",
     suratRekomendasi: "Surat Rekomendasi",
     suratBersedia: "Surat Pernyataan Bersedia",
+    suratSakit: "Surat Tidak Pernah Sakit Berat-Kronis",
+    suratIzinOrtu: "Surat Izin Orang Tua",
   };
 
   // Field yang tidak boleh ikut diekspor dari extras (internal atau

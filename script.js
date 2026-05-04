@@ -483,6 +483,7 @@ import {
   const FILE_FIELDS = [
     "pasFoto", "ijazah", "portoKarya", "portoTim",
     "suratIntegritas", "suratRekomendasi", "suratBersedia",
+    "suratSakit", "suratIzinOrtu",
   ];
 
   const FILE_FIELD_LABELS = {
@@ -493,6 +494,8 @@ import {
     suratIntegritas: "Surat Pernyataan Integritas",
     suratRekomendasi: "Surat Rekomendasi",
     suratBersedia: "Surat Pernyataan Bersedia",
+    suratSakit: "Surat Pernyataan Tidak Pernah Sakit Berat/Kronis",
+    suratIzinOrtu: "Surat Izin Orang Tua",
   };
 
   // Tipe yang diterima per kolom (secara eksplisit, terlepas dari header
@@ -505,6 +508,8 @@ import {
     suratIntegritas: ["application/pdf"],
     suratRekomendasi: ["application/pdf"],
     suratBersedia: ["application/pdf"],
+    suratSakit: ["application/pdf"],
+    suratIzinOrtu: ["application/pdf"],
   };
 
   const FIELD_MAX_BYTES = {
@@ -515,6 +520,8 @@ import {
     suratIntegritas: 10 * 1024 * 1024,
     suratRekomendasi: 10 * 1024 * 1024,
     suratBersedia: 10 * 1024 * 1024,
+    suratSakit: 10 * 1024 * 1024,
+    suratIzinOrtu: 10 * 1024 * 1024,
   };
 
   function collectFiles() {

@@ -56,7 +56,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Fraunces:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=20260503b" />
+  <link rel="stylesheet" href="styles.css?v=20260504c" />
 </head>
 <body>
   <!-- Topographic background pattern -->
@@ -868,6 +868,46 @@
               </a>
               <div class="dropzone" data-dropzone>
                 <input type="file" id="suratBersedia" name="suratBersedia" accept="application/pdf" required />
+                <div class="dropzone__inner">
+                  <div class="dropzone__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M20 16v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3"/></svg>
+                  </div>
+                  <div class="dropzone__text"><strong>Seret &amp; lepas</strong> file di sini, atau <span class="link">klik untuk pilih</span></div>
+                  <div class="dropzone__meta">PDF &middot; Maks. 10 MB</div>
+                </div>
+                <div class="dropzone__file" hidden></div>
+              </div>
+            </div>
+
+            <div class="field">
+              <label class="field__label" for="suratSakit">Surat Pernyataan Tidak Pernah Sakit Berat / Kronis</label>
+              <p class="field__help">Menyatakan dalam kondisi sehat dan tidak memiliki riwayat penyakit berat/kronis yang menghambat kegiatan ekspedisi.</p>
+              <a class="template-link" href="https://docs.google.com/document/d/1Ki2xu0LpvdmzZjXEIVbMIvaiUeBvTwd4/export?format=docx" target="_blank" rel="noopener">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12"/><path d="m7 12 5 5 5-5"/><path d="M20 21H4"/></svg>
+                <span>Unduh template surat (.docx)</span>
+              </a>
+              <div class="dropzone" data-dropzone>
+                <input type="file" id="suratSakit" name="suratSakit" accept="application/pdf" required />
+                <div class="dropzone__inner">
+                  <div class="dropzone__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M20 16v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3"/></svg>
+                  </div>
+                  <div class="dropzone__text"><strong>Seret &amp; lepas</strong> file di sini, atau <span class="link">klik untuk pilih</span></div>
+                  <div class="dropzone__meta">PDF &middot; Maks. 10 MB</div>
+                </div>
+                <div class="dropzone__file" hidden></div>
+              </div>
+            </div>
+
+            <div class="field">
+              <label class="field__label" for="suratIzinOrtu">Surat Izin Orang Tua</label>
+              <p class="field__help">Surat izin tertulis dari orang tua / wali yang menyetujui keikutsertaan Anda dalam Tim Ekspedisi Patriot 2026.</p>
+              <a class="template-link" href="https://docs.google.com/document/d/1lGR57AvejDuq6LrMCNLs1WmLyVrKaFLJ/export?format=docx" target="_blank" rel="noopener">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12"/><path d="m7 12 5 5 5-5"/><path d="M20 21H4"/></svg>
+                <span>Unduh template surat (.docx)</span>
+              </a>
+              <div class="dropzone" data-dropzone>
+                <input type="file" id="suratIzinOrtu" name="suratIzinOrtu" accept="application/pdf" required />
                 <div class="dropzone__inner">
                   <div class="dropzone__icon" aria-hidden="true">
                     <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M20 16v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3"/></svg>
