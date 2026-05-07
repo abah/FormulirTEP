@@ -1156,17 +1156,20 @@ import {
   // Schema field: tipe input + label + opsi pilihan. Field yang TIDAK
   // tercantum di sini tidak akan muncul di form edit (kunci, file, dll).
   // Order penting: menentukan urutan tampil di form.
+  // Daftar & format penulisan WAJIB sama persis dengan dropdown di
+  // form publik (index.html → #ptMitra), jangan diubah tanpa
+  // sinkronisasi di sisi form.
   const PT_MITRA_OPTIONS = [
-    "Universitas Indonesia (UI)",
-    "Institut Teknologi Bandung (ITB)",
-    "Institut Pertanian Bogor (IPB)",
-    "Universitas Gadjah Mada (UGM)",
-    "Institut Teknologi Sepuluh Nopember (ITS)",
-    "Universitas Hasanuddin (UNHAS)",
-    "Universitas Brawijaya (UB)",
-    "Universitas Padjadjaran (UNPAD)",
-    "Universitas Diponegoro (UNDIP)",
-    "Universitas Sebelas Maret (UNS)",
+    "IPB University",
+    "Institut Teknologi Bandung",
+    "Institut Teknologi Sepuluh Nopember",
+    "Universitas Indonesia",
+    "Universitas Gadjah Mada",
+    "Universitas Airlangga",
+    "Universitas Brawijaya",
+    "Universitas Diponegoro",
+    "Universitas Hasanuddin",
+    "Universitas Padjadjaran",
   ];
   const SIZE_OPTIONS = ["S", "M", "L", "XL", "2XL", "3XL", "4XL"];
 
@@ -1319,8 +1322,15 @@ import {
       const opts = f.options.map((o) =>
         `<option value="${esc(o)}"${o === value ? " selected" : ""}>${esc(o)}</option>`
       ).join("");
+      // Preserve nilai lama yang tidak ada di daftar opsi sekarang
+      // (mis. format penulisan PT Mitra yang berubah). Tampilkan sebagai
+      // opsi terpilih dengan label "(data lama)" supaya admin sadar.
+      const legacy = (value && !f.options.includes(value))
+        ? `<option value="${esc(value)}" selected>${esc(value)} (data lama)</option>`
+        : "";
       input = `<select class="edit-field__select" data-edit-key="${esc(f.key)}">
         <option value="">— pilih —</option>
+        ${legacy}
         ${opts}
       </select>`;
     } else {
